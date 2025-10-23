@@ -1,0 +1,26 @@
+{
+  "name": "snappy",
+  "version": "1.0.0",
+  "description": "SNAPPY - Local-first desktop billing app for lawyers",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && python -m flask run --port=5000",
+    "build": "cd frontend && npm run build",
+    "tauri:dev": "cd frontend && npm run tauri dev",
+    "tauri:build": "cd frontend && npm run tauri build",
+    "lint": "npm run lint:frontend && npm run lint:backend",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:backend": "cd backend && black . && flake8 .",
+    "test": "npm run test:backend",
+    "test:backend": "cd backend && pytest",
+    "seed": "cd backend && python ../scripts/seed_db.py"
+  },
+  "keywords": ["billing", "invoice", "tauri", "desktop"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
