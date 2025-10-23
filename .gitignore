@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Databases
+*.db
+*.duckdb
+*.sqlite
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tauri
+src-tauri/target/
+
+# Logs
+*.log
+
+# Backups
+backups/
+
+# Demo output
+demo-output/
+
+# Build
+frontend/dist/
+frontend/build/
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
