@@ -1,7 +1,8 @@
 """Invoice API endpoints"""
-from flask import Blueprint, request, jsonify, send_file, current_app
+from flask import Blueprint, request, jsonify, send_file, current_app, session
 from backend.app.models.models import db, Invoice, InvoiceItem, Client, Settings
-from backend.app.services.pdf_service import generate_pdf
+from backend.app.models.auth import User, Firm
+from backend.app.services.pdf_templates import generate_pdf_with_template
 from datetime import datetime, date
 import io
 
@@ -208,11 +209,30 @@ def mark_invoice_paid(invoice_id):
 
 @bp.route('/invoices/<int:invoice_id>/generate_pdf', methods=['POST'])
 def generate_invoice_pdf(invoice_id):
-    """Generate PDF for an invoice"""
+    """Generate PDF for an invoice using firm's template preference"""
     invoice = Invoice.query.get_or_404(invoice_id)
     
     try:
-        pdf_bytes = generate_pdf(invoice)
+        # Get current user and their firm to access template preference
+        user_id = session.get('user_id')
+        firm = None
+        template_name = None
+        
+        if user_id:
+            user = User.query.get(user_id)
+            if user and user.firm:
+                firm = user.firm
+                template_name = firm.default_template if firm else None
+                print(f"DEBUG: User ID: {user_id}, Firm: {firm.firm_name}")
+                print(f"DEBUG: Template from firm: {firm.default_template}")
+                print(f"DEBUG: Template to use: {template_name}")
+            else:
+                print(f"DEBUG: User found but no firm. User: {user.email if user else 'N/A'}")
+        else:
+            print(f"DEBUG: No user_id in session")
+        
+        # Generate PDF using the firm's preferred template
+        pdf_bytes = generate_pdf_with_template(invoice, firm, template_name)
         
         # Return PDF as downloadable file
         return send_file(

@@ -30,41 +30,49 @@ class DuckDBService:
         # Get all invoices with client data
         invoices = db.session.query(Invoice).join(Client).all()
         
-        # Prepare data for DuckDB
-        data = []
-        for inv in invoices:
-            data.append({
-                'invoice_id': inv.id,
-                'invoice_number': inv.invoice_number,
-                'client_id': inv.client_id,
-                'client_name': inv.client.name,
-                'invoice_date': inv.invoice_date.isoformat() if inv.invoice_date else None,
-                'due_date': inv.due_date.isoformat() if inv.due_date else None,
-                'subtotal': inv.subtotal,
-                'tax_amount': inv.tax_amount,
-                'total': inv.total,
-                'status': inv.status,
-                'paid_date': inv.paid_date.isoformat() if inv.paid_date else None
-            })
+        # Always create/recreate the table structure
+        conn.execute("DROP TABLE IF EXISTS invoices")
+        conn.execute("""
+            CREATE TABLE invoices (
+                invoice_id INTEGER,
+                invoice_number VARCHAR,
+                client_id INTEGER,
+                client_name VARCHAR,
+                invoice_date DATE,
+                due_date DATE,
+                subtotal DOUBLE,
+                tax_amount DOUBLE,
+                total DOUBLE,
+                status VARCHAR,
+                paid_date DATE
+            )
+        """)
         
-        # Create or replace table
-        if data:
-            conn.execute("DROP TABLE IF EXISTS invoices")
-            conn.execute("""
-                CREATE TABLE invoices AS 
-                SELECT * FROM (VALUES 
-                    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ) AS t(invoice_id, invoice_number, client_id, client_name, 
-                       invoice_date, due_date, subtotal, tax_amount, total, status, paid_date)
-            """, [tuple(data[0].values())])
+        # Prepare and insert data only if invoices exist
+        if invoices:
+            data = []
+            for inv in invoices:
+                data.append({
+                    'invoice_id': inv.id,
+                    'invoice_number': inv.invoice_number,
+                    'client_id': inv.client_id,
+                    'client_name': inv.client.name,
+                    'invoice_date': inv.invoice_date.isoformat() if inv.invoice_date else None,
+                    'due_date': inv.due_date.isoformat() if inv.due_date else None,
+                    'subtotal': inv.subtotal,
+                    'tax_amount': inv.tax_amount,
+                    'total': inv.total,
+                    'status': inv.status,
+                    'paid_date': inv.paid_date.isoformat() if inv.paid_date else None
+                })
             
-            # Insert remaining rows
-            for row in data[1:]:
+            # Insert all rows
+            for row in data:
                 conn.execute("""
                     INSERT INTO invoices VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, tuple(row.values()))
         
-        return len(data)
+        return len(invoices)
     
     def get_monthly_revenue(self, start_date=None, end_date=None):
         """

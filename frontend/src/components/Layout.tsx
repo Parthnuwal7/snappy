@@ -1,5 +1,7 @@
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import OnboardingWarning from './OnboardingWarning';
 
 const navigation = [
   { name: 'Dashboard', path: '/dashboard', icon: '📊' },
@@ -11,7 +13,14 @@ const navigation = [
 
 export default function Layout() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, firm, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -52,16 +61,34 @@ export default function Layout() {
           })}
         </nav>
 
-        <div className="p-4 border-t border-primary-700">
-          <div className={`text-xs text-primary-300 ${!sidebarOpen && 'hidden'}`}>
+        <div className="p-4 border-t border-primary-700 space-y-2">
+          {sidebarOpen && (
+            <div className="px-4 py-2 bg-primary-700 rounded-lg">
+              <div className="text-sm font-medium truncate">{user?.email}</div>
+              {firm && (
+                <div className="text-xs text-primary-300 truncate">{firm.firm_name}</div>
+              )}
+            </div>
+          )}
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-4 py-2 text-primary-100 hover:bg-primary-700 hover:text-white rounded-lg transition-colors"
+          >
+            <span className="text-xl">🚪</span>
+            {sidebarOpen && <span className="font-medium">Logout</span>}
+          </button>
+          <div className={`text-xs text-primary-300 text-center ${!sidebarOpen && 'hidden'}`}>
             v1.0.0 • MIT License
           </div>
         </div>
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
-        <Outlet />
+      <main className="flex-1 overflow-auto flex flex-col">
+        <OnboardingWarning />
+        <div className="flex-1">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

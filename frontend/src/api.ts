@@ -2,11 +2,25 @@
  * API configuration and base URL
  */
 
-// Base URL for the Flask backend
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Base URL for the Flask backend with API versioning
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api/v1';
 
 // API endpoints
 export const API_ENDPOINTS = {
+  // Auth endpoints
+  auth: {
+    login: `${API_BASE_URL}/auth/login`,
+    register: `${API_BASE_URL}/auth/register`,
+    logout: `${API_BASE_URL}/auth/logout`,
+    me: `${API_BASE_URL}/auth/me`,
+    onboard: `${API_BASE_URL}/auth/onboard`,
+    deleteAccount: `${API_BASE_URL}/auth/delete_account`,
+    // New JWT endpoints
+    token: `${API_BASE_URL}/auth/token`,
+    refresh: `${API_BASE_URL}/auth/refresh`,
+    validate: `${API_BASE_URL}/auth/validate`,
+  },
+  // Core endpoints
   clients: `${API_BASE_URL}/clients`,
   invoices: `${API_BASE_URL}/invoices`,
   analytics: {
@@ -17,6 +31,19 @@ export const API_ENDPOINTS = {
   import: `${API_BASE_URL}/import/csv`,
   backup: `${API_BASE_URL}/backup`,
   restore: `${API_BASE_URL}/restore`,
+  // New subscription endpoints
+  subscription: {
+    plans: `${API_BASE_URL}/subscription/plans`,
+    current: `${API_BASE_URL}/subscription/current`,
+    create: `${API_BASE_URL}/subscription/create`,
+    cancel: `${API_BASE_URL}/subscription/cancel`,
+    update: `${API_BASE_URL}/subscription/update`,
+  },
+  // New license endpoints
+  license: {
+    validate: `${API_BASE_URL}/license/validate`,
+    activate: `${API_BASE_URL}/license/activate`,
+  },
 };
 
 // Types
@@ -91,6 +118,7 @@ export async function fetchAPI<T>(
   try {
     const response = await fetch(url, {
       ...options,
+      credentials: 'include', // Important for session cookies
       headers: {
         'Content-Type': 'application/json',
         ...options?.headers,
@@ -179,6 +207,7 @@ export const api = {
   generatePDF: async (id: number): Promise<Blob> => {
     const response = await fetch(`${API_ENDPOINTS.invoices}/${id}/generate_pdf`, {
       method: 'POST',
+      credentials: 'include', // Include session cookie
     });
     if (!response.ok) {
       throw new Error('Failed to generate PDF');
@@ -199,4 +228,49 @@ export const api = {
     fetchAPI<TopClient[]>(`${API_ENDPOINTS.analytics.topClients}?limit=${limit}`),
   
   getAgingBuckets: () => fetchAPI<AgingBuckets>(API_ENDPOINTS.analytics.aging),
+
+  // Authentication
+  login: (email: string, password: string) =>
+    fetchAPI<any>(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  register: (email: string, password: string, productKey?: string) =>
+    fetchAPI<any>(`${API_BASE_URL}/auth/register`, {
+      method: 'POST',
+      body: JSON.stringify({ email, password, product_key: productKey }),
+    }),
+
+  logout: () =>
+    fetchAPI<any>(`${API_BASE_URL}/auth/logout`, {
+      method: 'POST',
+    }),
+
+  getCurrentUser: () =>
+    fetchAPI<any>(`${API_BASE_URL}/auth/me`),
+
+  validateKey: (key: string) =>
+    fetchAPI<{ valid: boolean; error?: string }>(`${API_BASE_URL}/auth/validate-key`, {
+      method: 'POST',
+      body: JSON.stringify({ key }),
+    }),
+
+  onboard: (data: any) =>
+    fetchAPI<any>(`${API_BASE_URL}/auth/onboard`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateFirm: (data: any) =>
+    fetchAPI<any>(`${API_BASE_URL}/auth/firm`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteAccount: (confirmation: string) =>
+    fetchAPI<any>(`${API_BASE_URL}/auth/delete-account`, {
+      method: 'DELETE',
+      body: JSON.stringify({ confirmation }),
+    }),
 };
