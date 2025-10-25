@@ -1,34 +1,45 @@
 import { useState, useEffect } from 'react';
 import { Eye, EyeOff, Users, FileText, TrendingUp, Activity } from 'lucide-react';
+import axios from 'axios';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const Admin = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   // Check if already authenticated
   useEffect(() => {
-    const auth = localStorage.getItem('snappy_admin_auth');
-    if (auth === 'authenticated') {
+    const token = localStorage.getItem('snappy_admin_token');
+    if (token) {
       setIsAuthenticated(true);
     }
   }, []);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
+    setError('');
     
-    // Simple password protection - In production, use proper authentication
-    if (password === 'snappy2025') {
-      localStorage.setItem('snappy_admin_auth', 'authenticated');
-      setIsAuthenticated(true);
-      setError('');
-    } else {
-      setError('Incorrect password');
+    try {
+      const response = await axios.post(`${API_URL}/admin/login`, { password });
+      
+      if (response.data.success) {
+        localStorage.setItem('snappy_admin_token', response.data.token);
+        setIsAuthenticated(true);
+        setPassword('');
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('snappy_admin_auth');
+    localStorage.removeItem('snappy_admin_token');
     setIsAuthenticated(false);
     setPassword('');
   };
@@ -70,14 +81,15 @@ const Admin = () => {
 
             <button
               type="submit"
-              className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors duration-200 font-semibold"
+              disabled={loading}
+              className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors duration-200 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Access Dashboard
+              {loading ? 'Logging in...' : 'Access Dashboard'}
             </button>
           </form>
 
           <p className="text-xs text-gray-500 text-center mt-6">
-            For demo purposes, password is: snappy2025
+            Contact admin for password
           </p>
         </div>
       </div>

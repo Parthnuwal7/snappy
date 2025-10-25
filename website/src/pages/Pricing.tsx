@@ -1,7 +1,43 @@
 import { Check, X, Zap, Crown, Building2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import UPIPaymentModal from '../components/UPIPaymentModal';
 
 const Pricing = () => {
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<'starter' | 'pro' | 'enterprise' | null>(null);
+
+  const handleGetStarted = (planName: string) => {
+    if (planName === 'Trial') {
+      // Handle free trial - could redirect to download page
+      navigate('/download');
+      return;
+    }
+
+    if (planName === 'Enterprise') {
+      // Redirect to contact/support for enterprise
+      navigate('/support');
+      return;
+    }
+
+    // For Starter and Pro plans
+    if (!isAuthenticated) {
+      // Redirect to register with plan info
+      navigate('/register', { state: { plan: planName.toLowerCase() } });
+      return;
+    }
+
+    // Show UPI payment modal
+    setSelectedPlan(planName.toLowerCase() as 'starter' | 'pro' | 'enterprise');
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentSuccess = () => {
+    navigate('/dashboard');
+  };
   const plans = [
     {
       name: 'Trial',
@@ -165,8 +201,8 @@ const Pricing = () => {
                 </span>
               </div>
 
-              <Link
-                to="/download"
+              <button
+                onClick={() => handleGetStarted(plan.name)}
                 className={`block w-full py-3 rounded-lg font-semibold text-center mb-6 transition-colors duration-200 ${
                   plan.highlight
                     ? 'bg-white text-blue-600 hover:bg-gray-100'
@@ -174,7 +210,7 @@ const Pricing = () => {
                 }`}
               >
                 {plan.cta}
-              </Link>
+              </button>
 
               <ul className="space-y-3">
                 {plan.features.map((feature, fIndex) => (
@@ -243,6 +279,15 @@ const Pricing = () => {
           </Link>
         </div>
       </div>
+
+      {/* UPI Payment Modal */}
+      {showPaymentModal && selectedPlan && (
+        <UPIPaymentModal
+          plan={selectedPlan}
+          onClose={() => setShowPaymentModal(false)}
+          onSuccess={handlePaymentSuccess}
+        />
+      )}
     </div>
   );
 };

@@ -51,3 +51,4 @@ htmlcov/
 
 # Admin credentials (KEEP SECRET!)
 ADMIN_CREDENTIALS.md
+flask_session/

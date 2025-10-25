@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: snappy-backend
+    runtime: node
+    env: node
+    region: singapore # Change to your preferred region
+    plan: free # or 'starter' for paid plan
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: JWT_SECRET
+        sync: false # Add manually in Render dashboard
+      - key: ADMIN_PASSWORD
+        sync: false # Add manually in Render dashboard
+      - key: SUPABASE_URL
+        sync: false # Add manually in Render dashboard
+      - key: SUPABASE_KEY
+        sync: false # Add manually in Render dashboard
+      - key: FRONTEND_URL
+        value: https://snappywebsite.vercel.app
+      - key: EMAIL_HOST
+        value: smtp.gmail.com
+      - key: EMAIL_PORT
+        value: 587
+      - key: EMAIL_USER
+        sync: false # Add manually in Render dashboard
+      - key: EMAIL_PASS
+        sync: false # Add manually in Render dashboard
