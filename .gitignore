@@ -48,3 +48,6 @@ frontend/build/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Admin credentials (KEEP SECRET!)
+ADMIN_CREDENTIALS.md

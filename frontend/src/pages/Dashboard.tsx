@@ -1,8 +1,35 @@
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '../contexts/AuthContext';
 import { api } from '../api';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import WelcomePreferencesModal from '../components/WelcomePreferencesModal';
 
 export default function Dashboard() {
+  const { firm } = useAuth();
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+
+  // Check if this is a new user (firm created within last 2 minutes)
+  useEffect(() => {
+    if (firm?.created_at) {
+      const createdAt = new Date(firm.created_at);
+      const now = new Date();
+      const diffMinutes = (now.getTime() - createdAt.getTime()) / 1000 / 60;
+      
+      // Show welcome modal if account created within last 2 minutes
+      // and user hasn't seen it yet (check localStorage)
+      const hasSeenWelcome = localStorage.getItem('hasSeenWelcome');
+      if (diffMinutes < 2 && !hasSeenWelcome) {
+        setShowWelcomeModal(true);
+      }
+    }
+  }, [firm]);
+
+  const handleCloseWelcome = () => {
+    setShowWelcomeModal(false);
+    localStorage.setItem('hasSeenWelcome', 'true');
+  };
+
   const { data: monthlyData, isLoading: monthlyLoading } = useQuery({
     queryKey: ['analytics', 'monthly'],
     queryFn: () => api.getMonthlyRevenue(),
@@ -147,6 +174,9 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Welcome Preferences Modal for New Users */}
+      {showWelcomeModal && <WelcomePreferencesModal onClose={handleCloseWelcome} />}
     </div>
   );
 }
