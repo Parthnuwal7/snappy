@@ -3,14 +3,18 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Use port 465 with SSL for better compatibility with Render
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: parseInt(process.env.EMAIL_PORT),
-  secure: process.env.EMAIL_SECURE === 'true',
+  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+  port: 465, // Use SSL port instead of TLS port 587
+  secure: true, // Use SSL
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  tls: {
+    rejectUnauthorized: false // Allow self-signed certificates
+  }
 });
 
 export async function sendLicenseEmail(userEmail, userName, licenseKey, plan) {
