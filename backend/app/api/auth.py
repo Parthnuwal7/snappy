@@ -1,8 +1,8 @@
 """Authentication API endpoints - Supabase JWT Auth + multi-tenant support"""
 from flask import Blueprint, request, jsonify, g, session
-from backend.app.models.models import db
-from backend.app.models.auth import User, FirmDetails, BankAccount
-from backend.app.middleware.jwt_auth import jwt_required, jwt_optional
+from app.models.models import db
+from app.models.auth import User, FirmDetails, BankAccount
+from app.middleware.jwt_auth import jwt_required, jwt_optional
 from datetime import datetime
 from functools import wraps
 from flask_limiter import Limiter

@@ -1,6 +1,6 @@
 """Analytics API endpoints"""
 from flask import Blueprint, request, jsonify
-from backend.app.services.duckdb_service import get_duckdb_service
+from app.services.duckdb_service import get_duckdb_service
 from datetime import datetime, timedelta
 
 bp = Blueprint('analytics', __name__)

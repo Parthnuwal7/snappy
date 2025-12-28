@@ -46,7 +46,7 @@ def get_supabase_image(user_id, image_type):
             return None
     
     try:
-        from backend.app.services.supabase_client import get_supabase_client
+        from app.services.supabase_client import get_supabase_client
         supabase = get_supabase_client()
         
         bucket_map = {
@@ -131,7 +131,7 @@ def number_to_words_indian(num):
 
 def generate_pdf_simple(invoice, firm):
     """Generate Simple template PDF (original template)"""
-    from backend.app.services.pdf_service import generate_pdf as original_generate_pdf
+    from app.services.pdf_service import generate_pdf as original_generate_pdf
     return original_generate_pdf(invoice)
 
 

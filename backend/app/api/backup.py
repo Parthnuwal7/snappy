@@ -1,7 +1,7 @@
 """Backup API endpoints"""
 from flask import Blueprint, request, jsonify, g, Response
-from backend.app.middleware.jwt_auth import jwt_required
-from backend.app.services.backup_job import (
+from app.middleware.jwt_auth import jwt_required
+from app.services.backup_job import (
     create_backup_for_user,
     get_user_backups,
     download_backup,
@@ -70,7 +70,7 @@ def delete_backup(file_name):
     user_id = g.user_id
     
     try:
-        from backend.app.services.supabase_client import get_supabase_client
+        from app.services.supabase_client import get_supabase_client
         supabase = get_supabase_client()
         
         file_path = f"{user_id}/{file_name}"

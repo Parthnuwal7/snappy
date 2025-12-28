@@ -1,7 +1,7 @@
 """Admin panel for managing users"""
 from flask import Blueprint, request, jsonify, render_template_string, make_response
-from backend.app.models.models import db
-from backend.app.models.auth import User
+from app.models.models import db
+from app.models.auth import User
 from datetime import datetime
 from functools import wraps
 
@@ -368,7 +368,7 @@ def delete_user_admin(user_id):
     
     try:
         # Import models needed for cleanup
-        from backend.app.models.models import Invoice, InvoiceItem, Client
+        from app.models.models import Invoice, InvoiceItem, Client
         
         # Get user's email for response message
         user_email = user.email

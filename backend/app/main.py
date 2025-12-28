@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 from datetime import timedelta
 import os
 
-from backend.app.models.models import db, init_db
-from backend.app.api import invoices, clients, analytics, import_csv, backup, auth, admin, items, storage
+from app.models.models import db, init_db
+from app.api import invoices, clients, analytics, import_csv, backup, auth, admin, items, storage
 
 # Load environment variables
 load_dotenv()
@@ -43,8 +43,8 @@ def create_app():
     with app.app_context():
         init_db()
         # Import all models to ensure tables are created
-        from backend.app.models.auth import User, Firm
-        from backend.app.models.models import Item  # Ensure items table is created
+        from app.models.auth import User, Firm
+        from app.models.models import Item  # Ensure items table is created
         db.create_all()
     
     # Register blueprints with API versioning (v1)

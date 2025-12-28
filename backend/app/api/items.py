@@ -1,8 +1,8 @@
 """Items API endpoints - Service/Product catalog - multi-tenant"""
 from flask import Blueprint, request, jsonify, g
-from backend.app.models.models import db, Item
-from backend.app.models.auth import User
-from backend.app.middleware.jwt_auth import jwt_required
+from app.models.models import db, Item
+from app.models.auth import User
+from app.middleware.jwt_auth import jwt_required
 from rapidfuzz import fuzz, process
 
 bp = Blueprint('items', __name__)

@@ -1,6 +1,6 @@
 """DuckDB analytics service"""
 import duckdb
-from backend.app.models.models import db, Invoice, Client
+from app.models.models import db, Invoice, Client
 import os
 
 

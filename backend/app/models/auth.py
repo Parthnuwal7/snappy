@@ -1,5 +1,5 @@
 """Authentication models - User, FirmDetails, BankAccount"""
-from backend.app.models.models import db
+from app.models.models import db
 from datetime import datetime
 import json
 

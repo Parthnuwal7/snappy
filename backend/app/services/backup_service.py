@@ -51,8 +51,8 @@ from datetime import datetime
 def create_backup_data(app):
     """Create full JSON backup of all data"""
     with app.app_context():
-        from backend.app.models.models import db, Client, Item, Invoice, Settings
-        from backend.app.models.auth import User, Firm
+        from app.models.models import db, Client, Item, Invoice, Settings
+        from app.models.auth import User, Firm
         
         # Get current user's firm
         user = User.query.first()
@@ -110,7 +110,7 @@ def save_backup_locally(backup_data, backup_dir=None):
 def upload_to_supabase(backup_data, user_email):
     """Upload backup to Supabase Storage bucket"""
     try:
-        from backend.app.services.supabase_service import SupabaseService
+        from app.services.supabase_service import SupabaseService
         
         supabase_service = SupabaseService()
         

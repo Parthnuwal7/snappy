@@ -1,6 +1,6 @@
 """CSV Import API endpoint"""
 from flask import Blueprint, request, jsonify
-from backend.app.models.models import db, Client, Invoice, InvoiceItem
+from app.models.models import db, Client, Invoice, InvoiceItem
 import pandas as pd
 from rapidfuzz import fuzz, process
 from datetime import datetime

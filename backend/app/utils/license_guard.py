@@ -4,8 +4,8 @@ Blocks app usage if license is expired
 """
 from datetime import datetime, timezone
 from flask import jsonify
-from backend.app.models.auth import User
-from backend.app.models.models import db
+from app.models.auth import User
+from app.models.models import db
 
 
 class LicenseExpiredError(Exception):

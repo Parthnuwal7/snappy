@@ -1,6 +1,6 @@
 """Storage API endpoints for file uploads (logos, signatures, QR codes)"""
 from flask import Blueprint, request, jsonify, g
-from backend.app.middleware.jwt_auth import jwt_required
+from app.middleware.jwt_auth import jwt_required
 import os
 import base64
 import io
@@ -27,7 +27,7 @@ def allowed_file(filename):
 def get_supabase():
     """Get Supabase client (lazy import to avoid circular dependencies)"""
     try:
-        from backend.app.services.supabase_client import get_supabase_client
+        from app.services.supabase_client import get_supabase_client
         return get_supabase_client()
     except ValueError:
         return None

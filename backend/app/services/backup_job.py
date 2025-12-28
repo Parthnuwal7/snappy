@@ -5,13 +5,13 @@ import hashlib
 from datetime import datetime, date
 from typing import Optional, Dict, Any, List
 
-from backend.app.models.models import db, Invoice, InvoiceItem, Client
+from app.models.models import db, Invoice, InvoiceItem, Client
 
 
 def get_supabase():
     """Get Supabase client"""
     try:
-        from backend.app.services.supabase_client import get_supabase_client
+        from app.services.supabase_client import get_supabase_client
         return get_supabase_client()
     except (ValueError, ImportError):
         return None

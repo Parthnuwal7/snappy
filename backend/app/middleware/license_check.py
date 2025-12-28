@@ -4,8 +4,8 @@ Checks license expiry every 10 requests for performance optimization
 """
 from flask import request, jsonify, session
 from functools import wraps
-from backend.app.models.auth import User
-from backend.app.utils.license_guard import get_license_expiry_response
+from app.models.auth import User
+from app.utils.license_guard import get_license_expiry_response
 
 
 def require_valid_license(f):

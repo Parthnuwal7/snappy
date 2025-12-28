@@ -1,9 +1,9 @@
 """Invoice API endpoints - multi-tenant"""
 from flask import Blueprint, request, jsonify, send_file, current_app, g
-from backend.app.models.models import db, Invoice, InvoiceItem, Client
-from backend.app.models.auth import User, FirmDetails, BankAccount
-from backend.app.services.pdf_templates import generate_pdf_with_template
-from backend.app.middleware.jwt_auth import jwt_required
+from app.models.models import db, Invoice, InvoiceItem, Client
+from app.models.auth import User, FirmDetails, BankAccount
+from app.services.pdf_templates import generate_pdf_with_template
+from app.middleware.jwt_auth import jwt_required
 from datetime import datetime, date
 import io
 
