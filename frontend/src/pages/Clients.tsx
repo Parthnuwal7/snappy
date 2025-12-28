@@ -48,7 +48,15 @@ export default function Clients() {
   const openModal = (client?: Client) => {
     if (client) {
       setEditingClient(client);
-      setFormData(client);
+      setFormData({
+        name: client.name,
+        email: client.email || '',
+        phone: client.phone || '',
+        address: client.address || '',
+        tax_id: client.tax_id || '',
+        default_tax_rate: client.default_tax_rate,
+        notes: client.notes || '',
+      });
     } else {
       setEditingClient(null);
       setFormData({

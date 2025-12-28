@@ -4,13 +4,12 @@ Main application factory and configuration
 """
 from flask import Flask
 from flask_cors import CORS
-from flask_session import Session
 from dotenv import load_dotenv
 from datetime import timedelta
 import os
 
 from backend.app.models.models import db, init_db
-from backend.app.api import invoices, clients, analytics, import_csv, backup, auth, admin
+from backend.app.api import invoices, clients, analytics, import_csv, backup, auth, admin, items, storage
 
 # Load environment variables
 load_dotenv()
@@ -28,17 +27,12 @@ def create_app():
     app.config['CURRENCY'] = os.getenv('CURRENCY', 'INR')
     app.config['DEFAULT_TAX_RATE'] = float(os.getenv('DEFAULT_TAX_RATE', '18'))
     
-    # Session configuration
-    app.config['SESSION_TYPE'] = 'filesystem'
-    app.config['SESSION_PERMANENT'] = True
-    app.config['SESSION_USE_SIGNER'] = False  # Set to False to avoid bytes/string issue
-    app.config['SESSION_FILE_DIR'] = os.path.join(os.path.dirname(__file__), '..', 'flask_session')
-    app.config['SESSION_FILE_THRESHOLD'] = 500
+    # Session configuration - use simple signed cookie sessions
+    # No filesystem storage needed, sessions stored in browser cookies
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
     app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)  # Sessions last 7 days
-    Session(app)
     
     # Enable CORS for Tauri/local development
     CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
@@ -48,8 +42,9 @@ def create_app():
     
     with app.app_context():
         init_db()
-        # Import auth models to create tables
-        from backend.app.models.auth import User, Firm, ProductKey
+        # Import all models to ensure tables are created
+        from backend.app.models.auth import User, Firm
+        from backend.app.models.models import Item  # Ensure items table is created
         db.create_all()
     
     # Register blueprints with API versioning (v1)
@@ -61,6 +56,8 @@ def create_app():
     app.register_blueprint(analytics.bp, url_prefix='/api/v1/analytics')
     app.register_blueprint(import_csv.bp, url_prefix='/api/v1')
     app.register_blueprint(backup.bp, url_prefix='/api/v1')
+    app.register_blueprint(items.bp, url_prefix='/api/v1')
+    app.register_blueprint(storage.bp, url_prefix='/api/v1/storage')
     
     @app.route('/health')
     def health():
@@ -79,8 +76,10 @@ def create_app():
                 'auth': '/api/v1/auth',
                 'clients': '/api/v1/clients',
                 'invoices': '/api/v1/invoices',
+                'items': '/api/v1/items',
                 'analytics': '/api/v1/analytics',
-                'backup': '/api/v1/backup'
+                'backup': '/api/v1/backup',
+                'storage': '/api/v1/storage'
             }
         }, 200
     

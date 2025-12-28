@@ -7,10 +7,11 @@ db = SQLAlchemy()
 
 
 class Client(db.Model):
-    """Client/Customer model"""
+    """Client/Customer model - scoped to user"""
     __tablename__ = 'clients'
     
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     name = db.Column(db.String(200), nullable=False, index=True)
     email = db.Column(db.String(200))
     phone = db.Column(db.String(50))
@@ -22,11 +23,13 @@ class Client(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
+    user = db.relationship('User', back_populates='clients')
     invoices = db.relationship('Invoice', back_populates='client', lazy='dynamic')
     
     def to_dict(self):
         return {
             'id': self.id,
+            'user_id': self.user_id,
             'name': self.name,
             'email': self.email,
             'phone': self.phone,
@@ -39,16 +42,52 @@ class Client(db.Model):
         }
 
 
+class Item(db.Model):
+    """Reusable service/product item catalog - scoped to user"""
+    __tablename__ = 'items'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    name = db.Column(db.String(200), nullable=False, index=True)
+    alias = db.Column(db.String(100), index=True)
+    description = db.Column(db.Text)
+    default_rate = db.Column(db.Float, default=0.0)
+    unit = db.Column(db.String(50), default='hour')
+    hsn_code = db.Column(db.String(50))
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = db.relationship('User', back_populates='items')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'name': self.name,
+            'alias': self.alias,
+            'description': self.description,
+            'default_rate': self.default_rate,
+            'unit': self.unit,
+            'hsn_code': self.hsn_code,
+            'is_active': self.is_active,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
 class Invoice(db.Model):
-    """Invoice model"""
+    """Invoice model - scoped to user"""
     __tablename__ = 'invoices'
     
     id = db.Column(db.Integer, primary_key=True)
-    invoice_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    invoice_number = db.Column(db.String(50), nullable=False, index=True)
     client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False)
     invoice_date = db.Column(db.Date, nullable=False, default=datetime.utcnow().date)
     due_date = db.Column(db.Date)
-    short_desc = db.Column(db.String(120))
+    short_desc = db.Column(db.Text)
     
     # Amounts
     subtotal = db.Column(db.Float, default=0.0)
@@ -57,16 +96,17 @@ class Invoice(db.Model):
     total = db.Column(db.Float, default=0.0)
     
     # Status
-    status = db.Column(db.String(20), default='draft')  # draft, sent, paid, void
+    status = db.Column(db.String(20), default='draft')
     paid_date = db.Column(db.Date)
     
     # Metadata
     notes = db.Column(db.Text)
-    signature_path = db.Column(db.String(500))
+    signature_path = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
+    user = db.relationship('User', back_populates='invoices')
     client = db.relationship('Client', back_populates='invoices')
     items = db.relationship('InvoiceItem', back_populates='invoice', cascade='all, delete-orphan')
     
@@ -79,6 +119,7 @@ class Invoice(db.Model):
     def to_dict(self, include_items=False):
         result = {
             'id': self.id,
+            'user_id': self.user_id,
             'invoice_number': self.invoice_number,
             'client_id': self.client_id,
             'client_name': self.client.name if self.client else None,
@@ -107,7 +148,7 @@ class InvoiceItem(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     invoice_id = db.Column(db.Integer, db.ForeignKey('invoices.id'), nullable=False)
-    description = db.Column(db.String(500), nullable=False)
+    description = db.Column(db.Text, nullable=False)
     quantity = db.Column(db.Float, default=1.0)
     rate = db.Column(db.Float, nullable=False)
     amount = db.Column(db.Float, nullable=False)
@@ -127,13 +168,18 @@ class InvoiceItem(db.Model):
 
 
 class Settings(db.Model):
-    """Application settings"""
+    """Application settings - scoped to user"""
     __tablename__ = 'settings'
     
     id = db.Column(db.Integer, primary_key=True)
-    key = db.Column(db.String(100), unique=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), index=True)
+    key = db.Column(db.String(100), nullable=False)
     value = db.Column(db.Text)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'key', name='uq_settings_user_key'),
+    )
     
     def to_dict(self):
         return {
@@ -146,25 +192,3 @@ class Settings(db.Model):
 def init_db():
     """Initialize database tables"""
     db.create_all()
-    
-    # Create default settings if they don't exist
-    default_settings = [
-        ('invoice_prefix', 'LAW'),
-        ('invoice_year_format', 'YYYY'),
-        ('invoice_padding', '4'),
-        ('currency', 'INR'),
-        ('default_tax_rate', '18'),
-        ('auto_backup', 'false')
-    ]
-    
-    for key, value in default_settings:
-        existing = Settings.query.filter_by(key=key).first()
-        if not existing:
-            setting = Settings(key=key, value=value)
-            db.session.add(setting)
-    
-    try:
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        print(f"Error initializing settings: {e}")

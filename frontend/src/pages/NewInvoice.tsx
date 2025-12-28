@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
-import { api, Client, InvoiceItem } from '../api';
+import { api, Client, InvoiceItem, Item } from '../api';
+import ItemAutocomplete from '../components/ItemAutocomplete';
+import { useAuth } from '../contexts/AuthContext';
 
 interface InvoiceForm {
   client_id: number;
@@ -18,16 +20,21 @@ export default function NewInvoice() {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { firm } = useAuth();
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [originalInvoice, setOriginalInvoice] = useState<any>(null);
 
-  const { register, control, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<InvoiceForm>({
+  // Get default tax rate from firm settings
+  const defaultTaxRate = firm?.default_tax_rate ?? 18;
+  const showDueDate = firm?.show_due_date ?? true;
+
+  const { register, control, handleSubmit, watch, setValue, reset } = useForm<InvoiceForm>({
     defaultValues: {
       client_id: 0,
       invoice_date: new Date().toISOString().split('T')[0],
       due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      tax_rate: 18,
+      tax_rate: defaultTaxRate,
       items: [{ description: '', quantity: 1, rate: 0, amount: 0 }],
     },
   });
@@ -58,7 +65,7 @@ export default function NewInvoice() {
       };
       reset(formData);
       setOriginalInvoice(formData);
-      
+
       // Load client info
       api.getClient(invoice.client_id).then((client) => {
         setSelectedClient(client);
@@ -127,7 +134,7 @@ export default function NewInvoice() {
         {/* Client Selection */}
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-xl font-semibold mb-4">Client Information</h2>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Search Client *
@@ -139,7 +146,7 @@ export default function NewInvoice() {
               placeholder="Type client name..."
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
-            
+
             {clients && clients.length > 0 && (
               <div className="mt-2 border border-gray-200 rounded-lg max-h-60 overflow-y-auto">
                 {clients.map((client) => (
@@ -160,7 +167,7 @@ export default function NewInvoice() {
                 ))}
               </div>
             )}
-            
+
             {selectedClient && (
               <div className="mt-4 p-4 bg-primary-50 rounded-lg">
                 <div className="font-medium text-primary-900">{selectedClient.name}</div>
@@ -174,7 +181,7 @@ export default function NewInvoice() {
         {/* Invoice Details */}
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-xl font-semibold mb-4">Invoice Details</h2>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -187,16 +194,18 @@ export default function NewInvoice() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Due Date
-              </label>
-              <input
-                type="date"
-                {...register('due_date')}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
+            {showDueDate && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Due Date
+                </label>
+                <input
+                  type="date"
+                  {...register('due_date')}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -231,51 +240,68 @@ export default function NewInvoice() {
         {/* Line Items */}
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-xl font-semibold mb-4">Line Items</h2>
-          
+
+          {/* Table Header */}
+          <div className="flex gap-4 items-center border-b pb-3 mb-4 bg-gray-50 -mx-6 px-6 py-2">
+            <div className="flex-1 text-sm font-medium text-gray-700">Description</div>
+            <div className="w-24 text-sm font-medium text-gray-700 text-center">Qty</div>
+            <div className="w-32 text-sm font-medium text-gray-700 text-center">Rate</div>
+            <div className="w-32 text-sm font-medium text-gray-700 text-right">Amount</div>
+            <div className="w-8"></div>
+          </div>
+
           <div className="space-y-4">
             {fields.map((field, index) => (
               <div key={field.id} className="flex gap-4 items-start border-b pb-4">
                 <div className="flex-1">
-                  <input
-                    {...register(`items.${index}.description`, { required: true })}
-                    placeholder="Description"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                  <ItemAutocomplete
+                    value={items[index]?.description || ''}
+                    onChange={(value) => setValue(`items.${index}.description`, value, { shouldValidate: true })}
+                    onSelectItem={(item: Item) => {
+                      setValue(`items.${index}.description`, item.description || item.name, { shouldValidate: true });
+                      setValue(`items.${index}.rate`, item.default_rate, { shouldValidate: true });
+                      // Calculate amount directly using the new rate
+                      const quantity = items[index]?.quantity || 1;
+                      const amount = quantity * item.default_rate;
+                      setValue(`items.${index}.amount`, amount, { shouldValidate: true });
+                    }}
+                    placeholder="Search item or type description..."
                   />
                 </div>
                 <div className="w-24">
                   <input
                     type="number"
                     step="0.01"
-                    {...register(`items.${index}.quantity`, { 
-                      required: true, 
+                    {...register(`items.${index}.quantity`, {
+                      required: true,
                       min: 0,
                       onChange: () => updateItemAmount(index)
                     })}
                     placeholder="Qty"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-center"
                   />
                 </div>
                 <div className="w-32">
                   <input
                     type="number"
                     step="0.01"
-                    {...register(`items.${index}.rate`, { 
-                      required: true, 
+                    {...register(`items.${index}.rate`, {
+                      required: true,
                       min: 0,
                       onChange: () => updateItemAmount(index)
                     })}
                     placeholder="Rate"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-right"
                   />
                 </div>
-                <div className="w-32 flex items-center">
+                <div className="w-32 flex items-center justify-end">
                   <span className="font-medium">{formatCurrency(items[index]?.amount || 0)}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => remove(index)}
                   disabled={fields.length === 1}
-                  className="text-red-600 hover:text-red-800 disabled:opacity-50"
+                  className="text-red-600 hover:text-red-800 disabled:opacity-50 w-8"
                 >
                   ✕
                 </button>

@@ -4,11 +4,12 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
+// Use SERVICE_KEY for backend operations (bypasses RLS)
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   console.error('❌ Missing Supabase credentials in .env file');
-  console.error('Please add SUPABASE_URL and SUPABASE_KEY to your .env file');
+  console.error('Please add SUPABASE_URL and SUPABASE_SERVICE_KEY to your .env file');
   process.exit(1);
 }
 

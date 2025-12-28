@@ -3,12 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function OnboardingWarning() {
-  const { user } = useAuth();
+  const { isOnboarded, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [dismissed, setDismissed] = useState(false);
 
   // Don't show if user is onboarded or warning is dismissed
-  if (!user || user.is_onboarded || dismissed) {
+  if (!isAuthenticated || isOnboarded || dismissed) {
     return null;
   }
 

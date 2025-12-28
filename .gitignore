@@ -13,6 +13,10 @@ build/
 venv/
 env/
 
+# Gmail API credentials (NEVER COMMIT!)
+credentials.json
+gmail-token.json
+
 # Databases
 *.db
 *.duckdb

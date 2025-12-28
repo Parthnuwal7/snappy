@@ -7,7 +7,7 @@ interface WelcomePreferencesModalProps {
 }
 
 export default function WelcomePreferencesModal({ onClose }: WelcomePreferencesModalProps) {
-  const { firm, refreshUser } = useAuth();
+  const { firm, refreshProfile } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -24,7 +24,7 @@ export default function WelcomePreferencesModal({ onClose }: WelcomePreferencesM
 
     try {
       await api.updateFirm(preferencesData);
-      await refreshUser();
+      await refreshProfile();
       setMessage({ type: 'success', text: 'Preferences saved successfully!' });
       setTimeout(() => {
         onClose();
@@ -52,11 +52,10 @@ export default function WelcomePreferencesModal({ onClose }: WelcomePreferencesM
 
         {message && (
           <div
-            className={`mb-6 p-3 border rounded-md text-sm ${
-              message.type === 'success'
+            className={`mb-6 p-3 border rounded-md text-sm ${message.type === 'success'
                 ? 'bg-green-50 border-green-200 text-green-700'
                 : 'bg-red-50 border-red-200 text-red-700'
-            }`}
+              }`}
           >
             {message.text}
           </div>

@@ -12,7 +12,7 @@ import { sendLicenseEmail, sendWelcomeEmail } from './email.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // Middleware - Allow multiple origins for CORS
 const allowedOrigins = [
@@ -664,10 +664,11 @@ app.post('/api/admin/verify-payment/:licenseId', authenticateAdmin, async (req, 
     const now = new Date().toISOString();
     const expiresAt = calculateExpiryDate(new Date()).toISOString();
 
-    // Update license - mark as verified but don't activate yet
+    // Update license - mark as verified (ready to use, but not yet used)
     const { error: updateError } = await supabase
       .from('licenses')
       .update({
+        status: 'verified',  // Status: verified (ready) → used (after desktop registration)
         admin_verified: true,
         verified_at: now,
         admin_notes: notes || 'Payment verified by admin',

@@ -7,7 +7,7 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children, requireOnboarding = false }: ProtectedRouteProps) {
-  const { isAuthenticated, user, isLoading } = useAuth();
+  const { isAuthenticated, isOnboarded, isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -25,7 +25,7 @@ export default function ProtectedRoute({ children, requireOnboarding = false }: 
   }
 
   // If route requires onboarding to be complete, but user hasn't onboarded yet
-  if (requireOnboarding && user && !user.is_onboarded) {
+  if (requireOnboarding && !isOnboarded) {
     return <Navigate to="/onboarding" replace />;
   }
 

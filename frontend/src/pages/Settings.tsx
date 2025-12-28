@@ -2,14 +2,15 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../api';
+import ImageUpload from '../components/ImageUpload';
 
 export default function Settings() {
-  const { firm, user, refreshUser } = useAuth();
+  const { firm, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'account' | 'preferences'>('account');
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  
+
   // Delete account modal
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
@@ -36,6 +37,7 @@ export default function Settings() {
     invoice_prefix: '',
     default_tax_rate: 18.0,
     currency: 'INR',
+    show_due_date: true,
   });
 
   useEffect(() => {
@@ -60,6 +62,7 @@ export default function Settings() {
         invoice_prefix: firm.invoice_prefix || '',
         default_tax_rate: firm.default_tax_rate || 18.0,
         currency: firm.currency || 'INR',
+        show_due_date: firm.show_due_date ?? true,
       });
     }
   }, [firm]);
@@ -72,7 +75,7 @@ export default function Settings() {
       await api.updateFirm(accountData);
       // Refresh user data silently (don't throw on error)
       try {
-        await refreshUser();
+        await refreshProfile();
       } catch (err) {
         console.error('Failed to refresh user data after save:', err);
         // Continue anyway - the save was successful
@@ -93,7 +96,7 @@ export default function Settings() {
       await api.updateFirm(preferencesData);
       // Refresh user data silently (don't throw on error)
       try {
-        await refreshUser();
+        await refreshProfile();
       } catch (err) {
         console.error('Failed to refresh user data after save:', err);
         // Continue anyway - the save was successful
@@ -144,21 +147,19 @@ export default function Settings() {
         <nav className="-mb-px flex space-x-8">
           <button
             onClick={() => setActiveTab('account')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'account'
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'account'
+              ? 'border-indigo-500 text-indigo-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
           >
             Account Details
           </button>
           <button
             onClick={() => setActiveTab('preferences')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'preferences'
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'preferences'
+              ? 'border-indigo-500 text-indigo-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
           >
             Preferences
           </button>
@@ -168,9 +169,8 @@ export default function Settings() {
       {/* Message */}
       {message && (
         <div
-          className={`mb-6 p-4 rounded-md ${
-            message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
-          }`}
+          className={`mb-6 p-4 rounded-md ${message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+            }`}
         >
           {message.text}
         </div>
@@ -273,12 +273,15 @@ export default function Settings() {
                 className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="Simple">Simple - Minimalist template</option>
-                <option value="LAW_001">LAW_001 - Professional template with branding</option>
+                <option value="LAW_001">LAW_001 - Professional full-page template</option>
+                <option value="HALF_PAGE">HALF_PAGE - Compact horizontal layout</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                {preferencesData.default_template === 'LAW_001'
-                  ? 'Professional template with firm logo, bank details, and UPI QR code'
-                  : 'Clean and simple invoice template'}
+                {preferencesData.default_template === 'HALF_PAGE'
+                  ? 'Compact template with logo, bank details, QR code, and signature'
+                  : preferencesData.default_template === 'LAW_001'
+                    ? 'Full-page professional template with firm branding'
+                    : 'Clean and simple invoice template'}
               </p>
             </div>
           </div>
@@ -333,6 +336,29 @@ export default function Settings() {
                     <option value="GBP">GBP (£)</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Due Date Toggle */}
+              <div className="flex items-center justify-between py-4 border-t mt-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Show Due Date on Invoices
+                  </label>
+                  <p className="text-xs text-gray-500">
+                    Enable to display due date field when creating invoices
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreferencesData({ ...preferencesData, show_due_date: !preferencesData.show_due_date })}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${preferencesData.show_due_date ? 'bg-indigo-600' : 'bg-gray-200'
+                    }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${preferencesData.show_due_date ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                  />
+                </button>
               </div>
             </div>
           </div>
@@ -415,6 +441,34 @@ export default function Settings() {
             </div>
           </div>
 
+          {/* Branding & Assets */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold mb-4">Branding & Assets</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Upload your firm logo, signature, and UPI QR code for invoices.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <ImageUpload
+                type="logo"
+                label="Firm Logo"
+                description="Appears on invoice header"
+              />
+
+              <ImageUpload
+                type="signature"
+                label="Signature"
+                description="Appears on invoice footer"
+              />
+
+              <ImageUpload
+                type="qr"
+                label="UPI QR Code"
+                description="Payment QR code"
+              />
+            </div>
+          </div>
+
           <div className="flex justify-end">
             <button
               onClick={handlePreferencesSave}
@@ -433,7 +487,7 @@ export default function Settings() {
         <p className="text-sm text-gray-600 mb-4">
           Once you delete your account, there is no going back. Please be certain.
         </p>
-        
+
         <button
           onClick={() => setShowDeleteModal(true)}
           className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
@@ -447,7 +501,7 @@ export default function Settings() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4">
             <h3 className="text-2xl font-bold text-red-600 mb-4">Delete Account</h3>
-            
+
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md">
               <p className="text-sm text-red-800 font-semibold mb-2">⚠️ Warning: This action is permanent!</p>
               <ul className="text-sm text-red-700 space-y-1 list-disc list-inside">

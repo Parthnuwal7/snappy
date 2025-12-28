@@ -1,31 +1,38 @@
-"""Invoice API endpoints"""
-from flask import Blueprint, request, jsonify, send_file, current_app, session
-from backend.app.models.models import db, Invoice, InvoiceItem, Client, Settings
-from backend.app.models.auth import User, Firm
+"""Invoice API endpoints - multi-tenant"""
+from flask import Blueprint, request, jsonify, send_file, current_app, g
+from backend.app.models.models import db, Invoice, InvoiceItem, Client
+from backend.app.models.auth import User, FirmDetails, BankAccount
 from backend.app.services.pdf_templates import generate_pdf_with_template
+from backend.app.middleware.jwt_auth import jwt_required
 from datetime import datetime, date
 import io
 
 bp = Blueprint('invoices', __name__)
 
 
-def generate_invoice_number():
-    """Generate next invoice number based on settings"""
-    prefix_setting = Settings.query.filter_by(key='invoice_prefix').first()
-    padding_setting = Settings.query.filter_by(key='invoice_padding').first()
+def get_current_user():
+    """Get the current user from Supabase ID"""
+    supabase_id = getattr(g, 'user_id', None)
+    if not supabase_id:
+        return None
+    return User.query.filter_by(supabase_id=supabase_id).first()
+
+
+def generate_invoice_number(user_id):
+    """Generate next invoice number for a specific user"""
+    user = User.query.get(user_id)
+    firm = user.firm_details if user else None
     
-    prefix = prefix_setting.value if prefix_setting else 'LAW'
-    padding = int(padding_setting.value) if padding_setting else 4
-    
+    prefix = firm.invoice_prefix if firm else 'INV'
     current_year = datetime.now().year
     
-    # Find last invoice for current year
+    # Find last invoice for this user and current year
     last_invoice = Invoice.query.filter(
+        Invoice.user_id == user_id,
         Invoice.invoice_number.like(f"{prefix}/{current_year}/%")
     ).order_by(Invoice.id.desc()).first()
     
     if last_invoice:
-        # Extract sequence number from last invoice
         parts = last_invoice.invoice_number.split('/')
         if len(parts) >= 3:
             try:
@@ -38,12 +45,17 @@ def generate_invoice_number():
     else:
         next_seq = 1
     
-    return f"{prefix}/{current_year}/{str(next_seq).zfill(padding)}"
+    return f"{prefix}/{current_year}/{str(next_seq).zfill(4)}"
 
 
 @bp.route('/invoices', methods=['GET'])
+@jwt_required
 def get_invoices():
-    """Get all invoices with optional filters"""
+    """Get all invoices for current user with optional filters"""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+    
     # Query parameters
     client_id = request.args.get('client_id', type=int)
     status = request.args.get('status')
@@ -51,7 +63,7 @@ def get_invoices():
     end_date = request.args.get('end_date')
     search = request.args.get('search')
     
-    query = Invoice.query
+    query = Invoice.query.filter_by(user_id=user.id)
     
     # Apply filters
     if client_id:
@@ -75,15 +87,28 @@ def get_invoices():
 
 
 @bp.route('/invoices/<int:invoice_id>', methods=['GET'])
+@jwt_required
 def get_invoice(invoice_id):
-    """Get a single invoice with items"""
-    invoice = Invoice.query.get_or_404(invoice_id)
+    """Get a single invoice with items (must belong to current user)"""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+    
+    invoice = Invoice.query.filter_by(id=invoice_id, user_id=user.id).first()
+    if not invoice:
+        return jsonify({'error': 'Invoice not found'}), 404
+    
     return jsonify(invoice.to_dict(include_items=True))
 
 
 @bp.route('/invoices', methods=['POST'])
+@jwt_required
 def create_invoice():
-    """Create a new invoice"""
+    """Create a new invoice for current user"""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+    
     try:
         data = request.get_json()
         
@@ -91,13 +116,13 @@ def create_invoice():
         if not data.get('client_id'):
             return jsonify({'error': 'Client ID is required'}), 400
         
-        # Verify client exists
-        client = Client.query.get(data['client_id'])
+        # Verify client exists and belongs to user
+        client = Client.query.filter_by(id=data['client_id'], user_id=user.id).first()
         if not client:
             return jsonify({'error': 'Client not found'}), 404
         
-        # Generate invoice number
-        invoice_number = generate_invoice_number()
+        # Generate invoice number for this user
+        invoice_number = generate_invoice_number(user.id)
         
         # Parse dates
         invoice_date = datetime.fromisoformat(data['invoice_date']).date() if data.get('invoice_date') else date.today()
@@ -108,6 +133,7 @@ def create_invoice():
         
         # Create invoice
         invoice = Invoice(
+            user_id=user.id,
             invoice_number=invoice_number,
             client_id=data['client_id'],
             invoice_date=invoice_date,
@@ -146,14 +172,25 @@ def create_invoice():
 
 
 @bp.route('/invoices/<int:invoice_id>', methods=['PUT'])
+@jwt_required
 def update_invoice(invoice_id):
-    """Update an existing invoice"""
-    invoice = Invoice.query.get_or_404(invoice_id)
+    """Update an existing invoice (must belong to current user)"""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+    
+    invoice = Invoice.query.filter_by(id=invoice_id, user_id=user.id).first()
+    if not invoice:
+        return jsonify({'error': 'Invoice not found'}), 404
+    
     data = request.get_json()
     
     # Update basic fields
     if 'client_id' in data:
-        invoice.client_id = data['client_id']
+        # Verify client belongs to user
+        client = Client.query.filter_by(id=data['client_id'], user_id=user.id).first()
+        if client:
+            invoice.client_id = data['client_id']
     if 'invoice_date' in data:
         invoice.invoice_date = datetime.fromisoformat(data['invoice_date']).date()
     if 'due_date' in data:
@@ -195,9 +232,17 @@ def update_invoice(invoice_id):
 
 
 @bp.route('/invoices/<int:invoice_id>/mark_paid', methods=['POST'])
+@jwt_required
 def mark_invoice_paid(invoice_id):
-    """Mark an invoice as paid"""
-    invoice = Invoice.query.get_or_404(invoice_id)
+    """Mark an invoice as paid (must belong to current user)"""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+    
+    invoice = Invoice.query.filter_by(id=invoice_id, user_id=user.id).first()
+    if not invoice:
+        return jsonify({'error': 'Invoice not found'}), 404
+    
     data = request.get_json() or {}
     
     invoice.status = 'paid'
@@ -208,31 +253,28 @@ def mark_invoice_paid(invoice_id):
 
 
 @bp.route('/invoices/<int:invoice_id>/generate_pdf', methods=['POST'])
+@jwt_required
 def generate_invoice_pdf(invoice_id):
     """Generate PDF for an invoice using firm's template preference"""
-    invoice = Invoice.query.get_or_404(invoice_id)
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+    
+    invoice = Invoice.query.filter_by(id=invoice_id, user_id=user.id).first()
+    if not invoice:
+        return jsonify({'error': 'Invoice not found'}), 404
     
     try:
-        # Get current user and their firm to access template preference
-        user_id = session.get('user_id')
-        firm = None
-        template_name = None
+        # Get firm details and bank account for PDF
+        firm = user.firm_details
+        bank = BankAccount.query.filter_by(user_id=user.id, is_default=True).first()
+        template_name = firm.default_template if firm else 'Simple'
         
-        if user_id:
-            user = User.query.get(user_id)
-            if user and user.firm:
-                firm = user.firm
-                template_name = firm.default_template if firm else None
-                print(f"DEBUG: User ID: {user_id}, Firm: {firm.firm_name}")
-                print(f"DEBUG: Template from firm: {firm.default_template}")
-                print(f"DEBUG: Template to use: {template_name}")
-            else:
-                print(f"DEBUG: User found but no firm. User: {user.email if user else 'N/A'}")
-        else:
-            print(f"DEBUG: No user_id in session")
+        print(f"DEBUG PDF: User ID: {user.supabase_id}, Firm: {firm.firm_name if firm else 'None'}")
+        print(f"DEBUG PDF: Template: {template_name}")
         
-        # Generate PDF using the firm's preferred template
-        pdf_bytes = generate_pdf_with_template(invoice, firm, template_name)
+        # Generate PDF
+        pdf_bytes = generate_pdf_with_template(invoice, firm, template_name, user_id=user.supabase_id, bank=bank)
         
         # Return PDF as downloadable file
         return send_file(
@@ -248,12 +290,72 @@ def generate_invoice_pdf(invoice_id):
 
 
 @bp.route('/invoices/<int:invoice_id>', methods=['DELETE'])
+@jwt_required
 def delete_invoice(invoice_id):
-    """Delete/void an invoice"""
-    invoice = Invoice.query.get_or_404(invoice_id)
+    """Delete/void an invoice (must belong to current user)"""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+    
+    invoice = Invoice.query.filter_by(id=invoice_id, user_id=user.id).first()
+    if not invoice:
+        return jsonify({'error': 'Invoice not found'}), 404
     
     # Mark as void instead of deleting
     invoice.status = 'void'
     db.session.commit()
     
     return jsonify({'message': 'Invoice voided successfully'})
+
+
+@bp.route('/invoices/<int:invoice_id>/duplicate', methods=['POST'])
+@jwt_required
+def duplicate_invoice(invoice_id):
+    """Duplicate an invoice with a new invoice number (must belong to current user)"""
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+    
+    original = Invoice.query.filter_by(id=invoice_id, user_id=user.id).first()
+    if not original:
+        return jsonify({'error': 'Invoice not found'}), 404
+    
+    # Generate new invoice number
+    new_invoice_number = generate_invoice_number(user.id)
+    
+    # Create new invoice with copied data
+    new_invoice = Invoice(
+        user_id=user.id,
+        invoice_number=new_invoice_number,
+        client_id=original.client_id,
+        invoice_date=date.today(),
+        due_date=original.due_date,
+        short_desc=original.short_desc,
+        subtotal=original.subtotal,
+        tax_rate=original.tax_rate,
+        tax_amount=original.tax_amount,
+        total=original.total,
+        status='draft',
+        notes=original.notes
+    )
+    
+    db.session.add(new_invoice)
+    db.session.flush()  # Get the new invoice ID
+    
+    # Copy line items
+    for item in original.items:
+        new_item = InvoiceItem(
+            invoice_id=new_invoice.id,
+            description=item.description,
+            quantity=item.quantity,
+            rate=item.rate,
+            amount=item.amount
+        )
+        db.session.add(new_item)
+    
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Invoice duplicated successfully',
+        'invoice': new_invoice.to_dict()
+    }), 201

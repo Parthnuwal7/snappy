@@ -1,140 +1,113 @@
-"""Authentication API endpoints"""
-from flask import Blueprint, request, jsonify, session, current_app
+"""Authentication API endpoints - Supabase JWT Auth + multi-tenant support"""
+from flask import Blueprint, request, jsonify, g, session
 from backend.app.models.models import db
-from backend.app.models.auth import User, Firm, ProductKey
-from datetime import datetime, timedelta
+from backend.app.models.auth import User, FirmDetails, BankAccount
+from backend.app.middleware.jwt_auth import jwt_required, jwt_optional
+from datetime import datetime
 from functools import wraps
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 bp = Blueprint('auth', __name__)
 
-
-def login_required(f):
-    """Decorator to require login"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            # Don't log 401s in development - they're expected when checking auth status
-            if current_app.debug:
-                pass  # Silent in debug mode
-            return jsonify({'error': 'Authentication required'}), 401
-        return f(*args, **kwargs)
-    return decorated_function
-
-
-@bp.route('/register', methods=['POST'])
-def register():
-    """Register new user"""
-    data = request.get_json()
-    
-    # Validate required fields
-    if not data.get('email') or not data.get('password'):
-        return jsonify({'error': 'Email and password are required'}), 400
-    
-    # Product key is MANDATORY
-    product_key = data.get('product_key')
-    if not product_key:
-        return jsonify({'error': 'Product key is required'}), 400
-    
-    # Check if user already exists
-    if User.query.filter_by(email=data['email']).first():
-        return jsonify({'error': 'Email already registered'}), 400
-    
-    # Validate product key
-    key_obj = ProductKey.query.filter_by(key=product_key, is_used=False).first()
-    if not key_obj:
-        return jsonify({'error': 'Invalid or already used product key'}), 400
-    
-    # Check if key is expired
-    if key_obj.expires_at and key_obj.expires_at < datetime.utcnow():
-        return jsonify({'error': 'Product key has expired'}), 400
-    
-    # Create user
-    user = User(email=data['email'])
-    user.set_password(data['password'])
-    
-    db.session.add(user)
-    db.session.commit()
-    
-    # Mark product key as used
-    key_obj.is_used = True
-    key_obj.user_id = user.id
-    key_obj.activated_at = datetime.utcnow()
-    db.session.commit()
-    
-    # Automatically log in the user after registration
-    session['user_id'] = user.id
-    user.last_login = datetime.utcnow()
-    db.session.commit()
-    
-    return jsonify({
-        'message': 'Registration successful',
-        'user': user.to_dict()
-    }), 201
-
-
-@bp.route('/login', methods=['POST'])
-def login():
-    """Login user"""
-    data = request.get_json()
-    
-    if not data.get('email') or not data.get('password'):
-        return jsonify({'error': 'Email and password are required'}), 400
-    
-    user = User.query.filter_by(email=data['email']).first()
-    
-    if not user or not user.check_password(data['password']):
-        return jsonify({'error': 'Invalid email or password'}), 401
-    
-    if not user.is_active:
-        return jsonify({'error': 'Account is disabled'}), 403
-    
-    # Update last login
-    user.last_login = datetime.utcnow()
-    db.session.commit()
-    
-    # Set session
-    session['user_id'] = user.id
-    
-    return jsonify({
-        'message': 'Login successful',
-        'user': user.to_dict()
-    })
-
-
-@bp.route('/logout', methods=['POST'])
-@login_required
-def logout():
-    """Logout user"""
-    session.pop('user_id', None)
-    return jsonify({'message': 'Logout successful'})
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["200 per hour"],
+    storage_uri="memory://"
+)
 
 
 @bp.route('/me', methods=['GET'])
-@login_required
+@jwt_required
 def get_current_user():
-    """Get current logged in user"""
-    user = User.query.get(session['user_id'])
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
+    """Get current logged in user's profile and firm details"""
+    user_id = g.user_id  # Set by jwt_required decorator
+    
+    # Get user from database
+    user = User.query.filter_by(supabase_id=user_id).first()
     
     response = {
-        'user': user.to_dict()
+        'user': {
+            'id': user_id,
+            'email': g.user_email,
+        },
+        'profile': None,
+        'firm': None,
+        'bank': None
     }
     
-    # Include firm details if onboarded
-    if user.is_onboarded and user.firm:
-        response['firm'] = user.firm.to_dict()
+    if user:
+        response['profile'] = {
+            'id': user.id,
+            'device_id': getattr(user, 'device_id', None),
+            'device_info': getattr(user, 'device_info', None),
+            'is_onboarded': user.is_onboarded,
+            'created_at': user.created_at.isoformat() if user.created_at else None,
+            'updated_at': user.updated_at.isoformat() if user.updated_at else None,
+        }
+        
+        if user.is_onboarded and user.firm_details:
+            response['firm'] = user.firm_details.to_dict()
+            
+            # Get default bank account
+            default_bank = BankAccount.query.filter_by(user_id=user.id, is_default=True).first()
+            if default_bank:
+                response['bank'] = default_bank.to_dict()
     
     return jsonify(response)
 
 
+@bp.route('/device', methods=['POST'])
+@jwt_required
+def update_device_info():
+    """Update device info for the current user"""
+    user_id = g.user_id
+    data = request.get_json()
+    
+    # Find or create user profile
+    user = User.query.filter_by(supabase_id=user_id).first()
+    
+    if not user:
+        # Create a new user profile linked to Supabase user
+        user = User(
+            supabase_id=user_id,
+            email=g.user_email,
+            is_active=True,
+            is_onboarded=False
+        )
+        db.session.add(user)
+    
+    # Update device info
+    user.device_id = data.get('device_id')
+    if hasattr(user, 'set_device_info'):
+        user.set_device_info(data.get('device_info'))
+    else:
+        user.device_info = data.get('device_info')
+    
+    user.last_login = datetime.utcnow()
+    db.session.commit()
+    
+    return jsonify({'message': 'Device info updated'})
+
+
 @bp.route('/onboard', methods=['POST'])
-@login_required
+@jwt_required
 def onboard():
     """Complete user onboarding with firm details"""
-    user = User.query.get(session['user_id'])
+    user_id = g.user_id
+    
+    # Find or create user profile
+    user = User.query.filter_by(supabase_id=user_id).first()
+    
     if not user:
-        return jsonify({'error': 'User not found'}), 404
+        user = User(
+            supabase_id=user_id,
+            email=g.user_email,
+            is_active=True,
+            is_onboarded=False
+        )
+        db.session.add(user)
+        db.session.flush()  # Get the user ID
     
     if user.is_onboarded:
         return jsonify({'error': 'User already onboarded'}), 400
@@ -147,8 +120,8 @@ def onboard():
         if not data.get(field):
             return jsonify({'error': f'{field} is required'}), 400
     
-    # Create firm
-    firm = Firm(
+    # Create firm details
+    firm = FirmDetails(
         user_id=user.id,
         firm_name=data['firm_name'],
         firm_address=data['firm_address'],
@@ -156,20 +129,29 @@ def onboard():
         firm_phone=data.get('firm_phone'),
         firm_phone_2=data.get('firm_phone_2'),
         firm_website=data.get('firm_website'),
-        bank_name=data.get('bank_name'),
-        account_number=data.get('account_number'),
-        account_holder_name=data.get('account_holder_name'),
-        ifsc_code=data.get('ifsc_code'),
-        upi_id=data.get('upi_id'),
         terms_and_conditions=data.get('terms_and_conditions'),
         billing_terms=data.get('billing_terms'),
-        default_template=data.get('default_template', 'LAW_001'),
-        invoice_prefix=data.get('invoice_prefix', 'LAW'),
+        default_template=data.get('default_template', 'Simple'),
+        invoice_prefix=data.get('invoice_prefix', 'INV'),
         default_tax_rate=float(data.get('default_tax_rate', 18.0)),
-        currency=data.get('currency', 'INR')
+        currency=data.get('currency', 'INR'),
+        show_due_date=data.get('show_due_date', True)
     )
-    
     db.session.add(firm)
+    
+    # Create bank account if provided
+    if data.get('bank_name') or data.get('account_number') or data.get('upi_id'):
+        bank = BankAccount(
+            user_id=user.id,
+            bank_name=data.get('bank_name'),
+            account_number=data.get('account_number'),
+            account_holder_name=data.get('account_holder_name'),
+            ifsc_code=data.get('ifsc_code'),
+            upi_id=data.get('upi_id'),
+            is_default=True
+        )
+        db.session.add(bank)
+    
     user.is_onboarded = True
     db.session.commit()
     
@@ -180,71 +162,94 @@ def onboard():
 
 
 @bp.route('/firm', methods=['GET', 'PUT'])
-@login_required
+@jwt_required
 def manage_firm():
     """Get or update firm details"""
-    user = User.query.get(session['user_id'])
-    if not user or not user.firm:
+    user_id = g.user_id
+    user = User.query.filter_by(supabase_id=user_id).first()
+    
+    if not user or not user.firm_details:
         return jsonify({'error': 'Firm not found'}), 404
     
     if request.method == 'GET':
-        return jsonify(user.firm.to_dict())
+        result = user.firm_details.to_dict()
+        # Include bank account if exists
+        bank = BankAccount.query.filter_by(user_id=user.id, is_default=True).first()
+        if bank:
+            result.update({
+                'bank_name': bank.bank_name,
+                'account_number': bank.account_number,
+                'account_holder_name': bank.account_holder_name,
+                'ifsc_code': bank.ifsc_code,
+                'upi_id': bank.upi_id,
+                'upi_qr_path': bank.upi_qr_path
+            })
+        return jsonify(result)
     
     # UPDATE
     data = request.get_json()
-    firm = user.firm
+    firm = user.firm_details
     
-    # Update all allowed fields
-    if 'firm_name' in data:
-        firm.firm_name = data['firm_name']
-    if 'firm_address' in data:
-        firm.firm_address = data['firm_address']
-    if 'firm_email' in data:
-        firm.firm_email = data['firm_email']
-    if 'firm_phone' in data:
-        firm.firm_phone = data['firm_phone']
-    if 'firm_phone_2' in data:
-        firm.firm_phone_2 = data['firm_phone_2']
-    if 'firm_website' in data:
-        firm.firm_website = data['firm_website']
-    if 'bank_name' in data:
-        firm.bank_name = data['bank_name']
-    if 'account_number' in data:
-        firm.account_number = data['account_number']
-    if 'account_holder_name' in data:
-        firm.account_holder_name = data['account_holder_name']
-    if 'ifsc_code' in data:
-        firm.ifsc_code = data['ifsc_code']
-    if 'upi_id' in data:
-        firm.upi_id = data['upi_id']
-    if 'terms_and_conditions' in data:
-        firm.terms_and_conditions = data['terms_and_conditions']
-    if 'billing_terms' in data:
-        firm.billing_terms = data['billing_terms']
-    if 'default_template' in data:
-        firm.default_template = data['default_template']
-    if 'invoice_prefix' in data:
-        firm.invoice_prefix = data['invoice_prefix']
+    # Update firm details fields
+    firm_fields = [
+        'firm_name', 'firm_address', 'firm_email', 'firm_phone', 'firm_phone_2',
+        'firm_website', 'terms_and_conditions', 'billing_terms',
+        'default_template', 'invoice_prefix', 'currency', 'logo_path', 'signature_path'
+    ]
+    
+    for field in firm_fields:
+        if field in data:
+            setattr(firm, field, data[field])
+    
     if 'default_tax_rate' in data:
         firm.default_tax_rate = float(data['default_tax_rate'])
-    if 'currency' in data:
-        firm.currency = data['currency']
+    
+    if 'show_due_date' in data:
+        firm.show_due_date = bool(data['show_due_date'])
+    
+    # Update bank account fields
+    bank_fields = ['bank_name', 'account_number', 'account_holder_name', 'ifsc_code', 'upi_id', 'upi_qr_path']
+    bank_data = {k: data[k] for k in bank_fields if k in data}
+    
+    if bank_data:
+        bank = BankAccount.query.filter_by(user_id=user.id, is_default=True).first()
+        if not bank:
+            bank = BankAccount(user_id=user.id, is_default=True)
+            db.session.add(bank)
+        
+        for field, value in bank_data.items():
+            setattr(bank, field, value)
     
     db.session.commit()
     
-    return jsonify({'firm': firm.to_dict()})
+    # Return combined response
+    result = firm.to_dict()
+    bank = BankAccount.query.filter_by(user_id=user.id, is_default=True).first()
+    if bank:
+        result.update({
+            'bank_name': bank.bank_name,
+            'account_number': bank.account_number,
+            'account_holder_name': bank.account_holder_name,
+            'ifsc_code': bank.ifsc_code,
+            'upi_id': bank.upi_id,
+            'upi_qr_path': bank.upi_qr_path
+        })
+    
+    return jsonify({'firm': result})
 
 
 @bp.route('/firm/core', methods=['PUT'])
-@login_required
+@jwt_required
 def update_firm_core():
-    """Update core firm details (name, logo, address, contacts) - settings only"""
-    user = User.query.get(session['user_id'])
-    if not user or not user.firm:
+    """Update core firm details (name, logo, address, contacts)"""
+    user_id = g.user_id
+    user = User.query.filter_by(supabase_id=user_id).first()
+    
+    if not user or not user.firm_details:
         return jsonify({'error': 'Firm not found'}), 404
     
     data = request.get_json()
-    firm = user.firm
+    firm = user.firm_details
     
     if 'firm_name' in data:
         firm.firm_name = data['firm_name']
@@ -260,107 +265,97 @@ def update_firm_core():
     return jsonify(firm.to_dict())
 
 
-@bp.route('/validate-key', methods=['POST'])
-def validate_product_key():
-    """Validate product key"""
-    data = request.get_json()
-    key = data.get('key')
-    
-    if not key:
-        return jsonify({'error': 'Product key is required'}), 400
-    
-    key_obj = ProductKey.query.filter_by(key=key).first()
-    
-    if not key_obj:
-        return jsonify({'valid': False, 'error': 'Invalid product key'}), 200
-    
-    if key_obj.is_used:
-        return jsonify({'valid': False, 'error': 'Product key already used'}), 200
-    
-    if key_obj.expires_at and key_obj.expires_at < datetime.utcnow():
-        return jsonify({'valid': False, 'error': 'Product key has expired'}), 200
-    
-    return jsonify({'valid': True}), 200
-
-
-@bp.route('/admin/keys/generate', methods=['POST'])
-def generate_keys():
-    """Generate product keys (admin only - add proper auth later)"""
-    data = request.get_json()
-    count = data.get('count', 1)
-    days = data.get('days', 365)  # Valid for 1 year by default
-    
-    keys = []
-    for _ in range(count):
-        key = ProductKey(
-            key=ProductKey.generate_key(),
-            expires_at=datetime.utcnow() + timedelta(days=days)
-        )
-        db.session.add(key)
-        keys.append(key.key)
-    
-    db.session.commit()
-    
-    return jsonify({
-        'message': f'{count} product keys generated',
-        'keys': keys
-    }), 201
-
-
-@bp.route('/delete-account', methods=['DELETE'])
-@login_required
-def delete_account():
-    """Delete user account and all associated data"""
-    data = request.get_json()
-    confirmation = data.get('confirmation')
-    
-    # Require explicit confirmation
-    if confirmation != 'confirm':
-        return jsonify({'error': 'Account deletion requires confirmation'}), 400
-    
-    user_id = session.get('user_id')
-    user = User.query.get(user_id)
+@bp.route('/bank', methods=['GET', 'POST', 'PUT'])
+@jwt_required
+def manage_bank():
+    """Manage bank account details"""
+    user_id = g.user_id
+    user = User.query.filter_by(supabase_id=user_id).first()
     
     if not user:
         return jsonify({'error': 'User not found'}), 404
     
-    try:
-        # Import models needed for cleanup
-        from backend.app.models.models import Invoice, InvoiceItem, Client
+    if request.method == 'GET':
+        banks = BankAccount.query.filter_by(user_id=user.id).all()
+        return jsonify([b.to_dict() for b in banks])
+    
+    data = request.get_json()
+    
+    if request.method == 'POST':
+        # Create new bank account
+        bank = BankAccount(
+            user_id=user.id,
+            bank_name=data.get('bank_name'),
+            account_number=data.get('account_number'),
+            account_holder_name=data.get('account_holder_name'),
+            ifsc_code=data.get('ifsc_code'),
+            upi_id=data.get('upi_id'),
+            upi_qr_path=data.get('upi_qr_path'),
+            is_default=data.get('is_default', False)
+        )
         
-        # Since invoices and clients don't have firm_id in the current schema,
-        # we'll delete ALL data (assumes single-user system per instance)
-        # In a multi-user system, you'd need to add firm_id to these models
+        # If this is the first bank or marked as default, make it default
+        existing = BankAccount.query.filter_by(user_id=user.id).count()
+        if existing == 0 or data.get('is_default'):
+            # Unset other defaults
+            BankAccount.query.filter_by(user_id=user.id).update({'is_default': False})
+            bank.is_default = True
         
-        # Delete all invoice items first (foreign key constraint)
-        InvoiceItem.query.delete()
-        
-        # Delete all invoices
-        Invoice.query.delete()
-        
-        # Delete all clients
-        Client.query.delete()
-        
-        # Delete firm if exists
-        if user.firm:
-            db.session.delete(user.firm)
-        
-        # Mark product key as unused (allow reuse)
-        product_key = ProductKey.query.filter_by(user_id=user.id).first()
-        if product_key:
-            product_key.is_used = False
-            product_key.user_id = None
-            product_key.activated_at = None
-        
-        # Delete user
-        db.session.delete(user)
+        db.session.add(bank)
         db.session.commit()
         
-        # Clear session
-        session.pop('user_id', None)
-        
-        return jsonify({'message': 'Account deleted successfully'}), 200
+        return jsonify(bank.to_dict()), 201
     
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': f'Failed to delete account: {str(e)}'}), 500
+    # PUT - update default bank
+    bank = BankAccount.query.filter_by(user_id=user.id, is_default=True).first()
+    if not bank:
+        bank = BankAccount(user_id=user.id, is_default=True)
+        db.session.add(bank)
+    
+    for field in ['bank_name', 'account_number', 'account_holder_name', 'ifsc_code', 'upi_id', 'upi_qr_path']:
+        if field in data:
+            setattr(bank, field, data[field])
+    
+    db.session.commit()
+    return jsonify(bank.to_dict())
+
+
+# =====================
+# Legacy Session-Based Auth (deprecated)
+# =====================
+
+def login_required_legacy(f):
+    """Legacy decorator for session-based auth"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@bp.route('/register', methods=['POST'])
+@limiter.limit("7 per hour")
+def register():
+    """Legacy register - redirects to use Supabase Auth"""
+    return jsonify({
+        'error': 'Direct registration is disabled. Please use Supabase Auth.',
+        'message': 'Use the frontend registration form which connects to Supabase.'
+    }), 400
+
+
+@bp.route('/login', methods=['POST'])
+@limiter.limit("5 per minute")
+def login():
+    """Legacy login - redirects to use Supabase Auth"""
+    return jsonify({
+        'error': 'Direct login is disabled. Please use Supabase Auth.',
+        'message': 'Use the frontend login form which connects to Supabase.'
+    }), 400
+
+
+@bp.route('/logout', methods=['POST'])
+def logout():
+    """Legacy logout - clears any session data"""
+    session.pop('user_id', None)
+    return jsonify({'message': 'Logout successful'})

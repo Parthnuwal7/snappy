@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../api';
+import ImageUpload from '../components/ImageUpload';
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const { refreshUser } = useAuth();
+  const { refreshProfile } = useAuth();
   const [step, setStep] = useState(1);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -43,43 +44,33 @@ export default function Onboarding() {
     // Handle Enter key behavior
     if (e.key === 'Enter') {
       const target = e.target as HTMLElement;
-      
-      // On step 1: Enter acts as Next button
-      if (step < 2) {
+      const tagName = target.tagName.toUpperCase();
+
+      // Always prevent submit on Enter in input fields (not textareas or buttons)
+      if (tagName === 'INPUT') {
         e.preventDefault();
-        console.log('Enter key pressed on step 1 - prevented submission');
-        nextStep();
-        return;
-      }
-      
-      // On step 2 (Banking Details): Enter acts as Tab, except on last field
-      if (step === 2) {
-        const isTextarea = target.tagName === 'TEXTAREA';
-        const isBillingTerms = (target as HTMLInputElement).name === 'billing_terms';
-        
-        // If we're on the billing_terms textarea (last field), allow submit
-        if (isTextarea && isBillingTerms) {
-          console.log('Enter pressed on last field (billing_terms) - allowing submit');
-          return; // Allow form submission
+
+        // On step 1: Enter in input field acts as Next button
+        if (step < 2) {
+          nextStep();
+          return;
         }
-        
-        // For all other fields on step 2, treat Enter as Tab
-        e.preventDefault();
-        console.log('Enter pressed on step 2 field - acting as Tab');
-        
-        // Find all focusable elements
+
+        // On step 2: Enter in input field acts as Tab
         const form = e.currentTarget;
         const focusableElements = form.querySelectorAll(
-          'input:not([disabled]), textarea:not([disabled]), button:not([disabled])'
+          'input:not([disabled]), textarea:not([disabled]), select:not([disabled])'
         );
         const focusableArray = Array.from(focusableElements) as HTMLElement[];
         const currentIndex = focusableArray.indexOf(target);
-        
-        // Move to next focusable element
+
         if (currentIndex > -1 && currentIndex < focusableArray.length - 1) {
           focusableArray[currentIndex + 1].focus();
         }
+        return;
       }
+
+      // For textareas and buttons, allow default behavior (newlines in textarea, click on button)
     }
   };
 
@@ -111,7 +102,7 @@ export default function Onboarding() {
       await api.onboard(formData);
       // Refresh user data to update onboarding status
       try {
-        await refreshUser();
+        await refreshProfile();
       } catch (refreshError) {
         console.error('Failed to refresh user data:', refreshError);
       }
@@ -161,9 +152,8 @@ export default function Onboarding() {
             {/* Step 1 */}
             <div className="flex items-center flex-1">
               <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-colors ${
-                  step >= 1 ? 'bg-indigo-600 text-white' : 'bg-gray-300 text-gray-600'
-                }`}
+                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-colors ${step >= 1 ? 'bg-indigo-600 text-white' : 'bg-gray-300 text-gray-600'
+                  }`}
               >
                 1
               </div>
@@ -171,19 +161,18 @@ export default function Onboarding() {
                 <div className={`h-1 ${step > 1 ? 'bg-indigo-600' : 'bg-gray-300'}`} />
               </div>
             </div>
-            
+
             {/* Step 2 */}
             <div className="flex items-center">
               <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-colors ${
-                  step >= 2 ? 'bg-indigo-600 text-white' : 'bg-gray-300 text-gray-600'
-                }`}
+                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-colors ${step >= 2 ? 'bg-indigo-600 text-white' : 'bg-gray-300 text-gray-600'
+                  }`}
               >
                 2
               </div>
             </div>
           </div>
-          
+
           <div className="flex justify-between mt-2 px-1">
             <span className="text-sm text-gray-600 text-left" style={{ width: '50%' }}>Basic Info</span>
             <span className="text-sm text-gray-600 text-right" style={{ width: '50%' }}>Banking Details</span>
@@ -199,10 +188,6 @@ export default function Onboarding() {
           )}
 
           <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
-            {/* Debug info - remove later */}
-            <div className="mb-4 p-2 bg-gray-100 rounded text-xs text-gray-600">
-              Current Step: {step} / 2
-            </div>
 
             {/* Step 1: Basic Information */}
             {step === 1 && (
@@ -385,6 +370,34 @@ export default function Onboarding() {
                     className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     placeholder="Payment terms..."
                   />
+                </div>
+
+                {/* Image Uploads Section */}
+                <div className="pt-6 border-t border-gray-200">
+                  <h4 className="text-lg font-medium text-gray-900 mb-4">Branding & Assets</h4>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Upload your firm logo, signature, and UPI QR code for invoices. You can skip this and add them later in Settings.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <ImageUpload
+                      type="logo"
+                      label="Firm Logo"
+                      description="Your company logo for invoices"
+                    />
+
+                    <ImageUpload
+                      type="signature"
+                      label="Signature"
+                      description="Your signature for invoices"
+                    />
+
+                    <ImageUpload
+                      type="qr"
+                      label="UPI QR Code"
+                      description="Payment QR code for invoices"
+                    />
+                  </div>
                 </div>
               </div>
             )}

@@ -7,6 +7,7 @@ const navigation = [
   { name: 'Dashboard', path: '/dashboard', icon: '📊' },
   { name: 'Invoices', path: '/invoices', icon: '📄' },
   { name: 'Clients', path: '/clients', icon: '👥' },
+  { name: 'Items', path: '/items', icon: '📦' },
   { name: 'Reports', path: '/reports', icon: '📈' },
   { name: 'Settings', path: '/settings', icon: '⚙️' },
 ];
@@ -26,9 +27,8 @@ export default function Layout() {
     <div className="flex h-screen bg-gray-50">
       {/* Sidebar */}
       <aside
-        className={`${
-          sidebarOpen ? 'w-64' : 'w-20'
-        } bg-primary-800 text-white transition-all duration-300 flex flex-col`}
+        className={`${sidebarOpen ? 'w-64' : 'w-20'
+          } bg-primary-800 text-white transition-all duration-300 flex flex-col`}
       >
         <div className="p-6 flex items-center justify-between">
           <h1 className={`text-2xl font-bold ${!sidebarOpen && 'hidden'}`}>SNAPPY</h1>
@@ -48,11 +48,10 @@ export default function Layout() {
               <Link
                 key={item.path}
                 to={item.path}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                  isActive
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive
                     ? 'bg-primary-600 text-white'
                     : 'text-primary-100 hover:bg-primary-700 hover:text-white'
-                }`}
+                  }`}
               >
                 <span className="text-xl">{item.icon}</span>
                 {sidebarOpen && <span className="font-medium">{item.name}</span>}

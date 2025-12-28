@@ -11,7 +11,10 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Onboarding from './pages/Onboarding';
+import Items from './pages/Items';
 
 function App() {
   // Keyboard shortcuts
@@ -39,6 +42,8 @@ function App() {
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route
             path="/onboarding"
             element={
@@ -63,6 +68,7 @@ function App() {
             <Route path="invoices/new" element={<NewInvoice />} />
             <Route path="invoices/:id/edit" element={<NewInvoice />} />
             <Route path="clients" element={<Clients />} />
+            <Route path="items" element={<Items />} />
             <Route path="reports" element={<Reports />} />
             <Route path="settings" element={<Settings />} />
           </Route>

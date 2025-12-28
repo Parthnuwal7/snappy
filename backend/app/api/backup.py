@@ -1,96 +1,98 @@
-"""Backup and Restore API endpoints"""
-from flask import Blueprint, request, jsonify, send_file
-from backend.app.services.backup_service import encrypt_backup, decrypt_backup
-from datetime import datetime
-import os
-import shutil
-import io
+"""Backup API endpoints"""
+from flask import Blueprint, request, jsonify, g, Response
+from backend.app.middleware.jwt_auth import jwt_required
+from backend.app.services.backup_job import (
+    create_backup_for_user,
+    get_user_backups,
+    download_backup,
+    delete_old_backups
+)
 
 bp = Blueprint('backup', __name__)
 
 
 @bp.route('/backup', methods=['POST'])
+@jwt_required
 def create_backup():
-    """Create a backup of the database"""
-    data = request.get_json() or {}
-    encrypt = data.get('encrypt', False)
-    password = data.get('password')
+    """Create a new backup of all invoices for the current user"""
+    user_id = g.user_id
+    user_email = g.user_email
     
-    if encrypt and not password:
-        return jsonify({'error': 'Password required for encrypted backup'}), 400
+    result = create_backup_for_user(user_id, user_email)
     
-    try:
-        # Database file path
-        db_path = 'snappy.db'
-        
-        if not os.path.exists(db_path):
-            return jsonify({'error': 'Database file not found'}), 404
-        
-        # Read database file
-        with open(db_path, 'rb') as f:
-            db_data = f.read()
-        
-        # Encrypt if requested
-        if encrypt:
-            db_data = encrypt_backup(db_data, password)
-        
-        # Generate filename
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"snappy_backup_{timestamp}.{'enc' if encrypt else 'db'}"
-        
-        # Return as downloadable file
-        return send_file(
-            io.BytesIO(db_data),
-            mimetype='application/octet-stream',
-            as_attachment=True,
-            download_name=filename
-        )
-        
-    except Exception as e:
-        return jsonify({'error': f'Backup failed: {str(e)}'}), 500
-
-
-@bp.route('/restore', methods=['POST'])
-def restore_backup():
-    """Restore database from backup"""
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-    
-    file = request.files['file']
-    password = request.form.get('password')
-    is_encrypted = request.form.get('encrypted', 'false').lower() == 'true'
-    
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
-    if is_encrypted and not password:
-        return jsonify({'error': 'Password required for encrypted backup'}), 400
-    
-    try:
-        # Read backup file
-        backup_data = file.read()
-        
-        # Decrypt if necessary
-        if is_encrypted:
-            try:
-                backup_data = decrypt_backup(backup_data, password)
-            except Exception:
-                return jsonify({'error': 'Failed to decrypt backup. Wrong password?'}), 400
-        
-        # Create backup of current database
-        db_path = 'snappy.db'
-        if os.path.exists(db_path):
-            backup_current = f"snappy_before_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
-            shutil.copy2(db_path, backup_current)
-        
-        # Write restored database
-        with open(db_path, 'wb') as f:
-            f.write(backup_data)
-        
+    if result:
         return jsonify({
-            'success': True,
-            'message': 'Database restored successfully'
-        })
+            'message': 'Backup created successfully',
+            'backup': result
+        }), 201
+    else:
+        return jsonify({'error': 'Failed to create backup'}), 500
+
+
+@bp.route('/backup', methods=['GET'])
+@jwt_required
+def list_backups():
+    """List all backups for the current user"""
+    user_id = g.user_id
+    
+    backups = get_user_backups(user_id)
+    
+    return jsonify({
+        'backups': backups,
+        'count': len(backups)
+    })
+
+
+@bp.route('/backup/<file_name>', methods=['GET'])
+@jwt_required
+def get_backup(file_name):
+    """Download a specific backup file"""
+    user_id = g.user_id
+    
+    content = download_backup(user_id, file_name)
+    
+    if content:
+        return Response(
+            content,
+            mimetype='application/json',
+            headers={
+                'Content-Disposition': f'attachment; filename={file_name}'
+            }
+        )
+    else:
+        return jsonify({'error': 'Backup not found'}), 404
+
+
+@bp.route('/backup/<file_name>', methods=['DELETE'])
+@jwt_required
+def delete_backup(file_name):
+    """Delete a specific backup file"""
+    user_id = g.user_id
+    
+    try:
+        from backend.app.services.supabase_client import get_supabase_client
+        supabase = get_supabase_client()
         
+        file_path = f"{user_id}/{file_name}"
+        supabase.storage.from_('invoice-backups').remove([file_path])
+        
+        return jsonify({'message': 'Backup deleted successfully'})
     except Exception as e:
-        return jsonify({'error': f'Restore failed: {str(e)}'}), 500
+        return jsonify({'error': f'Failed to delete backup: {str(e)}'}), 500
+
+
+@bp.route('/backup/cleanup', methods=['POST'])
+@jwt_required
+def cleanup_old_backups():
+    """Delete backups older than retention period"""
+    user_id = g.user_id
+    
+    data = request.get_json() or {}
+    retention_days = data.get('retention_days', 30)
+    
+    deleted_count = delete_old_backups(user_id, retention_days)
+    
+    return jsonify({
+        'message': f'Deleted {deleted_count} old backups',
+        'deleted_count': deleted_count
+    })
