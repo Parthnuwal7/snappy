@@ -35,6 +35,7 @@ export default function Settings() {
     billing_terms: '',
     default_template: 'Simple',
     invoice_prefix: '',
+    use_invoice_prefix: true,
     default_tax_rate: 18.0,
     currency: 'INR',
     show_due_date: true,
@@ -60,6 +61,7 @@ export default function Settings() {
         billing_terms: firm.billing_terms || '',
         default_template: firm.default_template || 'Simple',
         invoice_prefix: firm.invoice_prefix || '',
+        use_invoice_prefix: firm.use_invoice_prefix ?? true,
         default_tax_rate: firm.default_tax_rate ?? 18.0,
         currency: firm.currency || 'INR',
         show_due_date: firm.show_due_date ?? true,
@@ -300,8 +302,36 @@ export default function Settings() {
                   }
                   className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500"
                   placeholder="LAW"
+                  disabled={!preferencesData.use_invoice_prefix}
                 />
-                <p className="text-xs text-gray-500 mt-1">Example: LAW/2025/001</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {preferencesData.use_invoice_prefix
+                    ? `Example: ${preferencesData.invoice_prefix || 'INV'}/0001`
+                    : 'Example: 0001'}
+                </p>
+              </div>
+
+              {/* Use Prefix Toggle */}
+              <div className="flex items-center justify-between py-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Use Invoice Prefix
+                  </label>
+                  <p className="text-xs text-gray-500">
+                    Enable to add prefix before invoice numbers
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreferencesData({ ...preferencesData, use_invoice_prefix: !preferencesData.use_invoice_prefix })}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${preferencesData.use_invoice_prefix ? 'bg-indigo-600' : 'bg-gray-200'
+                    }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${preferencesData.use_invoice_prefix ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                  />
+                </button>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

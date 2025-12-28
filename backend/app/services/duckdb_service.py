@@ -68,12 +68,14 @@ class DuckDBService:
         if not self.should_sync(user_id):
             return 0
         
+        # IMMEDIATELY mark as syncing to prevent race condition with concurrent requests
+        _last_sync[user_id] = time.time()
+        
         conn = self.connect()
         
-        # Drop and recreate table to ensure correct schema
-        conn.execute("DROP TABLE IF EXISTS invoices")
+        # Create table if it doesn't exist (preserves other users' data)
         conn.execute("""
-            CREATE TABLE invoices (
+            CREATE TABLE IF NOT EXISTS invoices (
                 invoice_id INTEGER,
                 user_id INTEGER,
                 invoice_number VARCHAR,
@@ -88,6 +90,9 @@ class DuckDBService:
                 paid_date DATE
             )
         """)
+        
+        # Delete ONLY this user's old data (not all users)
+        conn.execute("DELETE FROM invoices WHERE user_id = ?", [user_id])
         
         # Get invoices for this user
         invoices = db.session.query(Invoice).join(Client).filter(Invoice.user_id == user_id).all()
@@ -112,9 +117,6 @@ class DuckDBService:
                     inv.paid_date.isoformat() if inv.paid_date else None
                 ))
         
-        # Update last sync time
-        _last_sync[user_id] = time.time()
-        
         return len(invoices)
     
     def get_monthly_revenue(self, user_id, start_date=None, end_date=None):
@@ -130,7 +132,7 @@ class DuckDBService:
         
         query = """
             SELECT 
-                strftime(invoice_date, '%Y-%m') as month,
+                strftime(CAST(invoice_date AS DATE), '%Y-%m') as month,
                 SUM(total) as revenue,
                 COUNT(*) as invoice_count
             FROM invoices
@@ -139,10 +141,10 @@ class DuckDBService:
         
         params = [user_id]
         if start_date:
-            query += " AND invoice_date >= ?"
+            query += " AND CAST(invoice_date AS DATE) >= CAST(? AS DATE)"
             params.append(start_date)
         if end_date:
-            query += " AND invoice_date <= ?"
+            query += " AND CAST(invoice_date AS DATE) <= CAST(? AS DATE)"
             params.append(end_date)
         
         query += " GROUP BY month ORDER BY month"

@@ -33,6 +33,7 @@ interface Firm {
   billing_terms?: string;
   default_template: string;
   invoice_prefix: string;
+  use_invoice_prefix?: boolean;
   default_tax_rate: number;
   currency: string;
   show_due_date?: boolean;

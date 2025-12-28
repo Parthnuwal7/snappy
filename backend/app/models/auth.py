@@ -78,6 +78,7 @@ class FirmDetails(db.Model):
     # Preferences
     default_template = db.Column(db.String(50), default='Simple')
     invoice_prefix = db.Column(db.String(20), default='INV')
+    use_invoice_prefix = db.Column(db.Boolean, default=True)  # True = PREFIX/SEQ, False = SEQ only
     default_tax_rate = db.Column(db.Float, default=18.0)
     currency = db.Column(db.String(10), default='INR')
     show_due_date = db.Column(db.Boolean, default=True)
@@ -104,6 +105,7 @@ class FirmDetails(db.Model):
             'billing_terms': self.billing_terms,
             'default_template': self.default_template,
             'invoice_prefix': self.invoice_prefix,
+            'use_invoice_prefix': self.use_invoice_prefix if self.use_invoice_prefix is not None else True,
             'default_tax_rate': self.default_tax_rate,
             'currency': self.currency,
             'show_due_date': self.show_due_date,

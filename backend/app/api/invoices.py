@@ -60,28 +60,41 @@ def generate_invoice_number(user_id):
     firm = user.firm_details if user else None
     
     prefix = firm.invoice_prefix if firm else 'INV'
-    current_year = datetime.now().year
+    use_prefix = firm.use_invoice_prefix if firm and firm.use_invoice_prefix is not None else True
     
-    # Find last invoice for this user and current year
-    last_invoice = Invoice.query.filter(
-        Invoice.user_id == user_id,
-        Invoice.invoice_number.like(f"{prefix}/{current_year}/%")
-    ).order_by(Invoice.id.desc()).first()
+    # Find last invoice for this user
+    if use_prefix:
+        # Look for PREFIX/SEQ pattern
+        last_invoice = Invoice.query.filter(
+            Invoice.user_id == user_id,
+            Invoice.invoice_number.like(f"{prefix}/%")
+        ).order_by(Invoice.id.desc()).first()
+    else:
+        # Look for numeric-only pattern
+        last_invoice = Invoice.query.filter(
+            Invoice.user_id == user_id
+        ).order_by(Invoice.id.desc()).first()
     
     if last_invoice:
         parts = last_invoice.invoice_number.split('/')
-        if len(parts) >= 3:
+        try:
+            # Get the last numeric part
+            last_seq = int(parts[-1])
+            next_seq = last_seq + 1
+        except ValueError:
+            # If last invoice was just a number, try parsing it directly
             try:
-                last_seq = int(parts[-1])
+                last_seq = int(last_invoice.invoice_number)
                 next_seq = last_seq + 1
             except ValueError:
                 next_seq = 1
-        else:
-            next_seq = 1
     else:
         next_seq = 1
     
-    return f"{prefix}/{current_year}/{str(next_seq).zfill(4)}"
+    if use_prefix:
+        return f"{prefix}/{str(next_seq).zfill(4)}"
+    else:
+        return str(next_seq).zfill(4)
 
 
 @bp.route('/invoices', methods=['GET'])
