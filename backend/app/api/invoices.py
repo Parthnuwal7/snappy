@@ -1,13 +1,49 @@
-"""Invoice API endpoints - multi-tenant"""
+"""Invoice API endpoints - multi-tenant with optimized queries"""
 from flask import Blueprint, request, jsonify, send_file, current_app, g
 from app.models.models import db, Invoice, InvoiceItem, Client
 from app.models.auth import User, FirmDetails, BankAccount
 from app.services.pdf_templates import generate_pdf_with_template
 from app.middleware.jwt_auth import jwt_required
+from sqlalchemy.orm import joinedload
 from datetime import datetime, date
 import io
+import time
 
 bp = Blueprint('invoices', __name__)
+
+# Cache for firm/bank details per user (50 minute TTL)
+_firm_cache = {}  # {user_id: (firm_dict, bank_dict, timestamp)}
+_firm_cache_ttl = 3000  # 50 minutes
+
+
+def get_cached_firm_bank(user):
+    """Get firm and bank details from cache or database"""
+    global _firm_cache
+    
+    cache_key = user.id
+    now = time.time()
+    
+    # Check cache
+    if cache_key in _firm_cache:
+        firm_dict, bank_dict, timestamp = _firm_cache[cache_key]
+        if now - timestamp < _firm_cache_ttl:
+            return firm_dict, bank_dict
+    
+    # Fetch from database
+    firm = user.firm_details
+    bank = BankAccount.query.filter_by(user_id=user.id, is_default=True).first()
+    
+    # Store in cache
+    _firm_cache[cache_key] = (firm, bank, now)
+    
+    return firm, bank
+
+
+def invalidate_firm_cache(user_id):
+    """Invalidate cache when firm/bank is updated"""
+    global _firm_cache
+    if user_id in _firm_cache:
+        del _firm_cache[user_id]
 
 
 def get_current_user():
@@ -260,18 +296,18 @@ def generate_invoice_pdf(invoice_id):
     if not user:
         return jsonify({'error': 'User not found'}), 401
     
-    invoice = Invoice.query.filter_by(id=invoice_id, user_id=user.id).first()
+    # Eager load invoice with client and items in single query (3 queries -> 1)
+    invoice = Invoice.query.options(
+        joinedload(Invoice.client),
+        joinedload(Invoice.items)
+    ).filter_by(id=invoice_id, user_id=user.id).first()
     if not invoice:
         return jsonify({'error': 'Invoice not found'}), 404
     
     try:
-        # Get firm details and bank account for PDF
-        firm = user.firm_details
-        bank = BankAccount.query.filter_by(user_id=user.id, is_default=True).first()
+        # Get firm details and bank account for PDF (from cache)
+        firm, bank = get_cached_firm_bank(user)
         template_name = firm.default_template if firm else 'Simple'
-        
-        print(f"DEBUG PDF: User ID: {user.supabase_id}, Firm: {firm.firm_name if firm else 'None'}")
-        print(f"DEBUG PDF: Template: {template_name}")
         
         # Generate PDF
         pdf_bytes = generate_pdf_with_template(invoice, firm, template_name, user_id=user.supabase_id, bank=bank)

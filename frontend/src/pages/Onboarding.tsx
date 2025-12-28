@@ -10,6 +10,7 @@ export default function Onboarding() {
   const [step, setStep] = useState(1);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isNavigating, setIsNavigating] = useState(false); // Prevent submit during step change
 
   // Form state
   const [formData, setFormData] = useState({
@@ -30,6 +31,7 @@ export default function Onboarding() {
     invoice_prefix: 'LAW',
     default_tax_rate: 18.0,
     currency: 'INR',
+    confirmSetup: false, // Mandatory checkbox to confirm setup
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -49,10 +51,15 @@ export default function Onboarding() {
       // Always prevent submit on Enter in input fields (not textareas or buttons)
       if (tagName === 'INPUT') {
         e.preventDefault();
+        e.stopPropagation();
 
         // On step 1: Enter in input field acts as Next button
         if (step < 2) {
-          nextStep();
+          setIsNavigating(true);
+          setTimeout(() => {
+            nextStep();
+            setIsNavigating(false);
+          }, 100);
           return;
         }
 
@@ -76,12 +83,12 @@ export default function Onboarding() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Form submitted, current step:', step);
+    console.log('Form submitted, current step:', step, 'isNavigating:', isNavigating);
     setError('');
 
-    // Only submit if we're on step 2 (Banking Details)
-    if (step < 2) {
-      console.log('Preventing early submission - not on final step');
+    // Prevent submission if navigating between steps or not on final step
+    if (isNavigating || step < 2) {
+      console.log('Preventing submission - not ready');
       return;
     }
 
@@ -398,6 +405,23 @@ export default function Onboarding() {
                       description="Payment QR code for invoices"
                     />
                   </div>
+                </div>
+
+                {/* Confirmation Checkbox */}
+                <div className="pt-6 border-t border-gray-200">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="confirmSetup"
+                      checked={formData.confirmSetup}
+                      onChange={(e) => setFormData(prev => ({ ...prev, confirmSetup: e.target.checked }))}
+                      className="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                      required
+                    />
+                    <span className="text-sm text-gray-700">
+                      I confirm that the above information is correct and I'm ready to complete setup <span className="text-red-500">*</span>
+                    </span>
+                  </label>
                 </div>
               </div>
             )}

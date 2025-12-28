@@ -1,11 +1,17 @@
-"""DuckDB analytics service"""
+"""DuckDB analytics service - multi-tenant with daily sync"""
 import duckdb
 from app.models.models import db, Invoice, Client
 import os
+import time
+from datetime import datetime
+
+# Sync tracking - per user
+_last_sync = {}  # {user_id: timestamp}
+_sync_interval = 86400  # 24 hours in seconds
 
 
 class DuckDBService:
-    """Service for analytics using DuckDB"""
+    """Service for analytics using DuckDB - user-scoped with daily sync"""
     
     def __init__(self, db_path='snappy_analytics.duckdb'):
         self.db_path = db_path
@@ -23,18 +29,53 @@ class DuckDBService:
             self.conn.close()
             self.conn = None
     
-    def sync_invoices(self):
-        """Sync invoice data from SQLite to DuckDB"""
+    def _ensure_table_exists(self, conn):
+        """Ensure the invoices table exists"""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS invoices (
+                invoice_id INTEGER,
+                user_id INTEGER,
+                invoice_number VARCHAR,
+                client_id INTEGER,
+                client_name VARCHAR,
+                invoice_date DATE,
+                due_date DATE,
+                subtotal DOUBLE,
+                tax_amount DOUBLE,
+                total DOUBLE,
+                status VARCHAR,
+                paid_date DATE
+            )
+        """)
+    
+    def should_sync(self, user_id):
+        """Check if we should sync for this user (once per day)"""
+        global _last_sync
+        last = _last_sync.get(user_id, 0)
+        return (time.time() - last) > _sync_interval
+    
+    def force_sync(self, user_id):
+        """Force a sync for a user (e.g., after creating/updating invoices)"""
+        global _last_sync
+        if user_id in _last_sync:
+            del _last_sync[user_id]
+    
+    def sync_invoices(self, user_id):
+        """Sync invoice data from PostgreSQL to DuckDB for a specific user (once per day)"""
+        global _last_sync
+        
+        # Skip if synced within the last day
+        if not self.should_sync(user_id):
+            return 0
+        
         conn = self.connect()
         
-        # Get all invoices with client data
-        invoices = db.session.query(Invoice).join(Client).all()
-        
-        # Always create/recreate the table structure
+        # Drop and recreate table to ensure correct schema
         conn.execute("DROP TABLE IF EXISTS invoices")
         conn.execute("""
             CREATE TABLE invoices (
                 invoice_id INTEGER,
+                user_id INTEGER,
                 invoice_number VARCHAR,
                 client_id INTEGER,
                 client_name VARCHAR,
@@ -48,41 +89,44 @@ class DuckDBService:
             )
         """)
         
-        # Prepare and insert data only if invoices exist
+        # Get invoices for this user
+        invoices = db.session.query(Invoice).join(Client).filter(Invoice.user_id == user_id).all()
+        
+        # Insert data
         if invoices:
-            data = []
             for inv in invoices:
-                data.append({
-                    'invoice_id': inv.id,
-                    'invoice_number': inv.invoice_number,
-                    'client_id': inv.client_id,
-                    'client_name': inv.client.name,
-                    'invoice_date': inv.invoice_date.isoformat() if inv.invoice_date else None,
-                    'due_date': inv.due_date.isoformat() if inv.due_date else None,
-                    'subtotal': inv.subtotal,
-                    'tax_amount': inv.tax_amount,
-                    'total': inv.total,
-                    'status': inv.status,
-                    'paid_date': inv.paid_date.isoformat() if inv.paid_date else None
-                })
-            
-            # Insert all rows
-            for row in data:
                 conn.execute("""
-                    INSERT INTO invoices VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, tuple(row.values()))
+                    INSERT INTO invoices VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    inv.id,
+                    inv.user_id,
+                    inv.invoice_number,
+                    inv.client_id,
+                    inv.client.name,
+                    inv.invoice_date.isoformat() if inv.invoice_date else None,
+                    inv.due_date.isoformat() if inv.due_date else None,
+                    inv.subtotal,
+                    inv.tax_amount,
+                    inv.total,
+                    inv.status,
+                    inv.paid_date.isoformat() if inv.paid_date else None
+                ))
+        
+        # Update last sync time
+        _last_sync[user_id] = time.time()
         
         return len(invoices)
     
-    def get_monthly_revenue(self, start_date=None, end_date=None):
+    def get_monthly_revenue(self, user_id, start_date=None, end_date=None):
         """
-        Get monthly revenue aggregation
+        Get monthly revenue aggregation for a specific user
         
         Returns:
             List of dicts with month and revenue
         """
-        self.sync_invoices()
+        self.sync_invoices(user_id)
         conn = self.connect()
+        self._ensure_table_exists(conn)
         
         query = """
             SELECT 
@@ -90,10 +134,10 @@ class DuckDBService:
                 SUM(total) as revenue,
                 COUNT(*) as invoice_count
             FROM invoices
-            WHERE status != 'void'
+            WHERE status != 'void' AND user_id = ?
         """
         
-        params = []
+        params = [user_id]
         if start_date:
             query += " AND invoice_date >= ?"
             params.append(start_date)
@@ -110,15 +154,16 @@ class DuckDBService:
             for row in result
         ]
     
-    def get_top_clients(self, limit=5):
+    def get_top_clients(self, user_id, limit=5):
         """
-        Get top clients by revenue
+        Get top clients by revenue for a specific user
         
         Returns:
             List of dicts with client info and revenue
         """
-        self.sync_invoices()
+        self.sync_invoices(user_id)
         conn = self.connect()
+        self._ensure_table_exists(conn)
         
         result = conn.execute("""
             SELECT 
@@ -127,11 +172,11 @@ class DuckDBService:
                 COUNT(*) as invoice_count,
                 AVG(total) as avg_invoice
             FROM invoices
-            WHERE status != 'void'
+            WHERE status != 'void' AND user_id = ?
             GROUP BY client_name
             ORDER BY total_revenue DESC
             LIMIT ?
-        """, [limit]).fetchall()
+        """, [user_id, limit]).fetchall()
         
         return [
             {
@@ -143,15 +188,16 @@ class DuckDBService:
             for row in result
         ]
     
-    def get_aging_buckets(self):
+    def get_aging_buckets(self, user_id):
         """
-        Get aging analysis (unpaid invoices by age)
+        Get aging analysis (unpaid invoices by age) for a specific user
         
         Returns:
             Dict with aging buckets
         """
-        self.sync_invoices()
+        self.sync_invoices(user_id)
         conn = self.connect()
+        self._ensure_table_exists(conn)
         
         result = conn.execute("""
             SELECT 
@@ -163,8 +209,8 @@ class DuckDBService:
                     THEN total ELSE 0 END) as bucket_61_plus,
                 COUNT(*) as total_unpaid
             FROM invoices
-            WHERE status IN ('draft', 'sent') AND due_date IS NOT NULL
-        """).fetchone()
+            WHERE status IN ('draft', 'sent') AND due_date IS NOT NULL AND user_id = ?
+        """, [user_id]).fetchone()
         
         return {
             'bucket_0_30': result[0] or 0,

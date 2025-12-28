@@ -1,4 +1,4 @@
-"""Invoice PDF templates"""
+"""Invoice PDF templates with optimized caching"""
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import inch
@@ -8,14 +8,73 @@ from reportlab.lib.enums import TA_RIGHT, TA_CENTER, TA_LEFT
 from io import BytesIO
 import os
 import requests
+import time
 
 
 # Use "Rs." instead of ₹ symbol for font compatibility
 CURRENCY_SYMBOL = "Rs."
 
-# Image cache to avoid repeated fetches (cache expires after 50 minutes)
-_image_cache = {}
-_cache_ttl = 3000  # 50 minutes in seconds
+# Cache TTL (50 minutes)
+_cache_ttl = 3000
+
+# Image cache to avoid repeated fetches
+_image_cache = {}  # {user_id_type: (bytes, timestamp)}
+
+# Template shell cache - stores pre-processed static elements per user
+# Includes: firm info formatted, styles, image bytes (logo, signature, qr)
+_template_shell_cache = {}  # {user_id: {template_name: {static_data, timestamp}}}
+
+
+def get_template_shell(user_id, template_name, firm, bank):
+    """
+    Get or create cached template shell with static elements.
+    Returns cached static data if available, otherwise creates and caches it.
+    """
+    global _template_shell_cache
+    
+    cache_key = f"{user_id}_{template_name}"
+    now = time.time()
+    
+    # Check cache
+    if cache_key in _template_shell_cache:
+        cached_data, timestamp = _template_shell_cache[cache_key]
+        if now - timestamp < _cache_ttl:
+            return cached_data
+    
+    # Build static shell data
+    shell_data = {
+        'firm_name': firm.firm_name if firm else '',
+        'firm_address': firm.firm_address if firm else '',
+        'firm_phone': firm.firm_phone if firm else '',
+        'firm_phone_2': getattr(firm, 'firm_phone_2', '') or '',
+        'firm_email': firm.firm_email if firm else '',
+        'default_template': template_name,
+        'invoice_prefix': firm.invoice_prefix if firm else 'INV',
+        'billing_terms': firm.billing_terms if firm else '',
+        # Bank details
+        'bank_name': bank.bank_name if bank else '',
+        'account_number': bank.account_number if bank else '',
+        'account_holder_name': bank.account_holder_name if bank else '',
+        'ifsc_code': bank.ifsc_code if bank else '',
+        'upi_id': bank.upi_id if bank else '',
+        # Pre-fetch images (uses image cache internally)
+        'logo_bytes': get_supabase_image(user_id, 'logo'),
+        'signature_bytes': get_supabase_image(user_id, 'signature'),
+        'qr_bytes': get_supabase_image(user_id, 'qr'),
+    }
+    
+    # Cache the shell
+    _template_shell_cache[cache_key] = (shell_data, now)
+    
+    return shell_data
+
+
+def invalidate_template_shell(user_id):
+    """Invalidate template shell when firm/bank is updated"""
+    global _template_shell_cache
+    keys_to_remove = [k for k in _template_shell_cache if k.startswith(f"{user_id}_")]
+    for key in keys_to_remove:
+        del _template_shell_cache[key]
 
 
 def get_supabase_image(user_id, image_type):
@@ -86,7 +145,6 @@ def get_supabase_image(user_id, image_type):
         return None
     except Exception as e:
         print(f"Error fetching image: {e}")
-        return None
         return None
 
 
@@ -331,7 +389,7 @@ def generate_pdf_law_001(invoice, firm):
     return pdf_bytes
 
 
-def generate_pdf_half_page(invoice, firm, user_id=None, bank=None):
+def generate_pdf_half_page(invoice, firm, user_id=None, bank=None, shell_data=None):
     """
     Generate HALF_PAGE template PDF - Compact horizontal layout (A5-like on A4)
     Based on the reference image with logo, bank details, QR, signature
@@ -341,6 +399,7 @@ def generate_pdf_half_page(invoice, firm, user_id=None, bank=None):
         firm: FirmDetails model
         user_id: Supabase user ID for fetching images from storage
         bank: BankAccount model for bank details
+        shell_data: Pre-cached static elements (firm info, images) for faster generation
     """
     from datetime import datetime
     
@@ -376,8 +435,17 @@ def generate_pdf_half_page(invoice, firm, user_id=None, bank=None):
     # Left: Logo + Firm name/address
     logo_img = None
     
-    # Try to fetch logo from Supabase Storage
-    if user_id:
+    # Use cached logo from shell_data if available, otherwise fetch
+    if shell_data and shell_data.get('logo_bytes'):
+        try:
+            # Create new BytesIO from cached bytes
+            logo_bytes = shell_data['logo_bytes']
+            if isinstance(logo_bytes, BytesIO):
+                logo_bytes.seek(0)
+            logo_img = Image(logo_bytes, width=0.6*inch, height=0.6*inch)
+        except:
+            pass
+    elif user_id:
         logo_data = get_supabase_image(user_id, 'logo')
         if logo_data:
             try:
@@ -556,8 +624,16 @@ def generate_pdf_half_page(invoice, firm, user_id=None, bank=None):
     # Bank Details with QR
     qr_img = None
     
-    # Try to fetch QR from Supabase Storage
-    if user_id:
+    # Use cached QR from shell_data if available, otherwise fetch
+    if shell_data and shell_data.get('qr_bytes'):
+        try:
+            qr_bytes = shell_data['qr_bytes']
+            if isinstance(qr_bytes, BytesIO):
+                qr_bytes.seek(0)
+            qr_img = Image(qr_bytes, width=0.8*inch, height=0.8*inch)
+        except:
+            pass
+    elif user_id:
         qr_data = get_supabase_image(user_id, 'qr')
         if qr_data:
             try:
@@ -593,8 +669,16 @@ Account holder's name : {account_holder or 'N/A'}"""
     sig_text = f"<b>For : {firm.firm_name}</b>"
     sig_img = None
     
-    # Try to fetch signature from Supabase Storage
-    if user_id:
+    # Use cached signature from shell_data if available, otherwise fetch
+    if shell_data and shell_data.get('signature_bytes'):
+        try:
+            sig_bytes = shell_data['signature_bytes']
+            if isinstance(sig_bytes, BytesIO):
+                sig_bytes.seek(0)
+            sig_img = Image(sig_bytes, width=1.2*inch, height=0.5*inch)
+        except:
+            pass
+    elif user_id:
         sig_data = get_supabase_image(user_id, 'signature')
         if sig_data:
             try:
@@ -649,7 +733,7 @@ TEMPLATES = {
 
 
 def generate_pdf_with_template(invoice, firm, template_name=None, user_id=None, bank=None):
-    """Generate PDF using specified template
+    """Generate PDF using specified template with cached static elements
     
     Args:
         invoice: Invoice model
@@ -661,14 +745,12 @@ def generate_pdf_with_template(invoice, firm, template_name=None, user_id=None, 
     if not template_name:
         template_name = firm.default_template if firm else 'Simple'
     
-    print(f"DEBUG PDF Template: Requested={template_name}, Firm={firm.firm_name if firm else 'None'}")
-    print(f"DEBUG PDF Template: Available templates={list(TEMPLATES.keys())}")
-    
     generator = TEMPLATES.get(template_name, generate_pdf_simple)
-    print(f"DEBUG PDF Template: Using generator={generator.__name__}")
     
-    # Pass user_id to templates that support it (for fetching images from Supabase)
+    # Use template shell cache for HALF_PAGE template
     if template_name == 'HALF_PAGE' and user_id:
-        return generator(invoice, firm, user_id=user_id, bank=bank)
+        # Get cached template shell (static elements)
+        shell_data = get_template_shell(user_id, template_name, firm, bank)
+        return generator(invoice, firm, user_id=user_id, bank=bank, shell_data=shell_data)
     else:
         return generator(invoice, firm)

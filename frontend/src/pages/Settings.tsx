@@ -60,7 +60,7 @@ export default function Settings() {
         billing_terms: firm.billing_terms || '',
         default_template: firm.default_template || 'Simple',
         invoice_prefix: firm.invoice_prefix || '',
-        default_tax_rate: firm.default_tax_rate || 18.0,
+        default_tax_rate: firm.default_tax_rate ?? 18.0,
         currency: firm.currency || 'INR',
         show_due_date: firm.show_due_date ?? true,
       });

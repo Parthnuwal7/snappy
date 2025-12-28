@@ -81,7 +81,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (response.ok) {
         const data = await response.json();
         setProfile(data.profile || null);
-        setFirm(data.firm || null);
+
+        // Merge bank data into firm object for Settings page compatibility
+        if (data.firm) {
+          const firmWithBank = {
+            ...data.firm,
+            ...(data.bank && {
+              bank_name: data.bank.bank_name,
+              account_number: data.bank.account_number,
+              account_holder_name: data.bank.account_holder_name,
+              ifsc_code: data.bank.ifsc_code,
+              upi_id: data.bank.upi_id,
+              upi_qr_path: data.bank.upi_qr_path,
+            }),
+          };
+          setFirm(firmWithBank);
+        } else {
+          setFirm(null);
+        }
       } else if (response.status === 404) {
         // Profile doesn't exist yet - user needs to complete onboarding
         setProfile(null);

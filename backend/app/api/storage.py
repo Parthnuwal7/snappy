@@ -205,3 +205,30 @@ def delete_file(file_type):
         return jsonify({'message': 'File deleted successfully'})
     else:
         return jsonify({'error': 'File not found or already deleted'}), 404
+
+
+@bp.route('/precache', methods=['POST'])
+@jwt_required
+def precache_images():
+    """
+    Pre-cache all user images (logo, signature, qr) for faster PDF generation.
+    Call this on landing/login to warm up the cache.
+    """
+    from app.services.pdf_templates import get_supabase_image
+    
+    user_id = g.user_id
+    cached = []
+    
+    # Pre-fetch all image types
+    for image_type in ['logo', 'signature', 'qr']:
+        try:
+            result = get_supabase_image(user_id, image_type)
+            if result:
+                cached.append(image_type)
+        except:
+            pass
+    
+    return jsonify({
+        'message': 'Images pre-cached successfully',
+        'cached': cached
+    })
