@@ -449,3 +449,294 @@ def parse_date(date_str):
             continue
     
     return None
+
+
+# =====================
+# V2 Import Endpoints - Custom format for client migration
+# =====================
+
+@bp.route('/import/v2/companies', methods=['POST'])
+@jwt_required
+def import_v2_companies():
+    """
+    Import companies/clients from CSV.
+    
+    Expected CSV format:
+    name,address,email,phone,tax_rate
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    try:
+        content = file.read().decode('utf-8')
+        reader = csv.DictReader(io.StringIO(content))
+        
+        clients_created = 0
+        clients_skipped = 0
+        errors = []
+        
+        existing_clients = {c.name.lower(): c for c in Client.query.filter_by(user_id=user.id).all()}
+        
+        for row_num, row in enumerate(reader, start=2):
+            try:
+                name = row.get('name', '').strip()
+                if not name:
+                    errors.append(f"Row {row_num}: Missing name")
+                    continue
+                
+                if name.lower() in existing_clients:
+                    clients_skipped += 1
+                    continue
+                
+                client = Client(
+                    user_id=user.id,
+                    name=name,
+                    address=row.get('address', ''),
+                    email=row.get('email', ''),
+                    phone=row.get('phone', ''),
+                    tax_id='',
+                    default_tax_rate=float(row.get('tax_rate', 0) or 0)
+                )
+                db.session.add(client)
+                existing_clients[name.lower()] = client
+                clients_created += 1
+                
+            except Exception as e:
+                errors.append(f"Row {row_num}: {str(e)}")
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'clients_created': clients_created,
+            'clients_skipped': clients_skipped,
+            'errors': errors[:20]
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Import failed: {str(e)}'}), 500
+
+
+@bp.route('/import/v2/invoices', methods=['POST'])
+@jwt_required
+def import_v2_invoices():
+    """
+    Import invoices from CSV with client's specific format.
+    Overwrites existing invoices with same number.
+    
+    Expected CSV format (one row per line item):
+    Date,Invoice No.,Description,Party Name,Item Name,Amount
+    
+    - Date: DD/MM/YYYY format
+    - Invoice No.: Will be standardized to 4 digits (257 -> 0257)
+    - Description: Invoice description (short_desc)
+    - Party Name: Client name (must exist)
+    - Item Name: Line item description
+    - Amount: Rate (quantity = 1)
+    - Status: All set to 'sent'
+    - Tax: All set to 0%
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    try:
+        content = file.read().decode('utf-8')
+        reader = csv.DictReader(io.StringIO(content))
+        
+        invoices_created = 0
+        invoices_updated = 0
+        items_added = 0
+        errors = []
+        
+        # Load existing clients
+        client_cache = {c.name.lower(): c for c in Client.query.filter_by(user_id=user.id).all()}
+        invoice_cache = {}  # {standardized_number: invoice}
+        
+        # Load existing invoices and delete their items (for overwrite)
+        existing_invoices = Invoice.query.filter_by(user_id=user.id).all()
+        invoices_to_overwrite = {}
+        for inv in existing_invoices:
+            invoices_to_overwrite[inv.invoice_number] = inv
+        
+        for row_num, row in enumerate(reader, start=2):
+            try:
+                # Get invoice number and standardize to 4 digits
+                raw_invoice_no = row.get('Invoice No.', '').strip()
+                if not raw_invoice_no:
+                    errors.append(f"Row {row_num}: Missing Invoice No.")
+                    continue
+                
+                # Extract numeric part and pad to 4 digits
+                try:
+                    num = int(raw_invoice_no)
+                    invoice_number = str(num).zfill(4)
+                except ValueError:
+                    invoice_number = raw_invoice_no  # Keep as-is if not numeric
+                
+                # Find client
+                party_name = row.get('Party Name', '').strip()
+                if not party_name:
+                    errors.append(f"Row {row_num}: Missing Party Name")
+                    continue
+                
+                client = client_cache.get(party_name.lower())
+                if not client:
+                    errors.append(f"Row {row_num}: Client '{party_name}' not found. Import companies first.")
+                    continue
+                
+                # Get or create invoice
+                invoice = invoice_cache.get(invoice_number)
+                if not invoice:
+                    # Check if we need to overwrite existing
+                    if invoice_number in invoices_to_overwrite:
+                        invoice = invoices_to_overwrite[invoice_number]
+                        # Delete existing items
+                        InvoiceItem.query.filter_by(invoice_id=invoice.id).delete()
+                        invoices_updated += 1
+                    else:
+                        # Create new invoice
+                        invoice_date = parse_date(row.get('Date', ''))
+                        if not invoice_date:
+                            invoice_date = datetime.utcnow().date()
+                        
+                        invoice = Invoice(
+                            user_id=user.id,
+                            invoice_number=invoice_number,
+                            client_id=client.id,
+                            invoice_date=invoice_date,
+                            due_date=None,
+                            short_desc=row.get('Description', ''),
+                            tax_rate=0,
+                            status='sent',
+                            paid_date=None
+                        )
+                        db.session.add(invoice)
+                        db.session.flush()
+                        invoices_created += 1
+                    
+                    invoice_cache[invoice_number] = invoice
+                
+                # Add line item
+                item_name = row.get('Item Name', '').strip()
+                if item_name:
+                    amount = float(row.get('Amount', 0) or 0)
+                    
+                    item = InvoiceItem(
+                        invoice_id=invoice.id,
+                        description=item_name,
+                        quantity=1,
+                        rate=amount,
+                        amount=amount
+                    )
+                    db.session.add(item)
+                    items_added += 1
+                
+            except Exception as e:
+                errors.append(f"Row {row_num}: {str(e)}")
+        
+        # Recalculate totals for all invoices
+        for inv in invoice_cache.values():
+            inv.calculate_totals()
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'invoices_created': invoices_created,
+            'invoices_updated': invoices_updated,
+            'items_added': items_added,
+            'errors': errors[:20]
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Import failed: {str(e)}'}), 500
+
+
+@bp.route('/import/v2/items', methods=['POST'])
+@jwt_required
+def import_v2_items():
+    """
+    Import items catalog from CSV.
+    
+    Expected CSV format:
+    name,alias,default_rate,unit
+    
+    Note: alias can be an array-like string "[alias1,alias2]"
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    try:
+        content = file.read().decode('utf-8')
+        reader = csv.DictReader(io.StringIO(content))
+        
+        items_created = 0
+        items_skipped = 0
+        errors = []
+        
+        existing_items = {i.name.lower(): i for i in Item.query.filter_by(user_id=user.id).all()}
+        
+        for row_num, row in enumerate(reader, start=2):
+            try:
+                name = row.get('name', '').strip()
+                if not name:
+                    continue
+                
+                if name.lower() in existing_items:
+                    items_skipped += 1
+                    continue
+                
+                item = Item(
+                    user_id=user.id,
+                    name=name,
+                    alias=row.get('alias', ''),
+                    description='',
+                    default_rate=float(row.get('default_rate', 0) or 0),
+                    unit=row.get('unit', 'unit'),
+                    is_active=True
+                )
+                db.session.add(item)
+                existing_items[name.lower()] = item
+                items_created += 1
+                
+            except Exception as e:
+                errors.append(f"Row {row_num}: {str(e)}")
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'items_created': items_created,
+            'items_skipped': items_skipped,
+            'errors': errors[:20]
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Import failed: {str(e)}'}), 500
