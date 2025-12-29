@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, Item } from '../api';
 
@@ -6,6 +6,7 @@ export default function Items() {
     const queryClient = useQueryClient();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<Item | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
     const [formData, setFormData] = useState({
         name: '',
         alias: '',
@@ -19,6 +20,19 @@ export default function Items() {
         queryKey: ['items'],
         queryFn: () => api.getItems(),
     });
+
+    // Filter items based on search query
+    const filteredItems = useMemo(() => {
+        if (!items) return [];
+        if (!searchQuery.trim()) return items;
+
+        const query = searchQuery.toLowerCase();
+        return items.filter(item =>
+            item.name.toLowerCase().includes(query) ||
+            item.alias?.toLowerCase().includes(query) ||
+            item.description?.toLowerCase().includes(query)
+        );
+    }, [items, searchQuery]);
 
     const createMutation = useMutation({
         mutationFn: api.createItem,
@@ -112,14 +126,30 @@ export default function Items() {
                 </button>
             </div>
 
+            {/* Search Bar */}
+            <div className="mb-6">
+                <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search items by name, alias, or description..."
+                    className="w-full md:w-96 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                />
+                {searchQuery && (
+                    <p className="text-sm text-gray-500 mt-2">
+                        Found {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
+                    </p>
+                )}
+            </div>
+
             {/* Items Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {isLoading ? (
                     <div className="col-span-full flex justify-center py-12">
                         <div className="spinner"></div>
                     </div>
-                ) : items && items.length > 0 ? (
-                    items.map((item) => (
+                ) : filteredItems && filteredItems.length > 0 ? (
+                    filteredItems.map((item) => (
                         <div key={item.id} className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
                             <div className="flex justify-between items-start mb-3">
                                 <div>

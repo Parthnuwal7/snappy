@@ -27,21 +27,23 @@ def get_clients():
     
     search = request.args.get('search', '')
     
-    if search:
+    if search and len(search) >= 2:  # Minimum 2 chars for search
         # Fuzzy search clients for this user
         all_clients = Client.query.filter_by(user_id=user_id).all()
         if all_clients:
+            # Use WRatio for better partial matching (handles "ICICI" matching "icici lomb")
             matches = process.extract(
                 search,
                 [c.name for c in all_clients],
-                scorer=fuzz.ratio,
-                limit=10
+                scorer=fuzz.WRatio,  # Better for partial/substring matching
+                limit=15
             )
-            matching_names = [match[0] for match in matches if match[1] > 60]
-            clients = Client.query.filter(
-                Client.user_id == user_id,
-                Client.name.in_(matching_names)
-            ).all()
+            # Lower threshold to 40 for more flexible matching
+            matching_names = [match[0] for match in matches if match[1] > 40]
+            clients = [c for c in all_clients if c.name in matching_names]
+            # Sort by match score (best matches first)
+            name_to_score = {match[0]: match[1] for match in matches}
+            clients.sort(key=lambda c: name_to_score.get(c.name, 0), reverse=True)
         else:
             clients = []
     else:

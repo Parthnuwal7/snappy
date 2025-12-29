@@ -8,15 +8,26 @@ from dotenv import load_dotenv
 # Load .env file explicitly
 load_dotenv()
 
+# Cache JWT secret (loaded once at startup)
+_jwt_secret_cache = None
+
 def get_jwt_secret():
     """Get the JWT secret for token validation"""
+    global _jwt_secret_cache
+    
+    if _jwt_secret_cache is not None:
+        return _jwt_secret_cache
+    
     secret = os.getenv('SUPABASE_JWT_SECRET', '')
-    # Debug: show first 10 chars of secret (or "NOT SET")
+    _jwt_secret_cache = secret
+    
+    # Debug: only print once at first load
     if secret:
         print(f"✅ JWT Secret loaded: {secret[:10]}...")
     else:
         print("❌ JWT Secret NOT FOUND in environment")
         print(f"   Available env vars with 'SUPABASE': {[k for k in os.environ if 'SUPABASE' in k]}")
+    
     return secret
 
 def jwt_required(f):

@@ -22,8 +22,17 @@ export default function NewInvoice() {
   const queryClient = useQueryClient();
   const { firm } = useAuth();
   const [clientSearch, setClientSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [originalInvoice, setOriginalInvoice] = useState<any>(null);
+
+  // Debounce client search - wait 300ms after typing stops
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(clientSearch);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [clientSearch]);
 
   // Get default tax rate from firm settings
   const defaultTaxRate = firm?.default_tax_rate ?? 18;
@@ -73,11 +82,11 @@ export default function NewInvoice() {
     }
   }, [invoice, reset]);
 
-  // Client search
-  const { data: clients } = useQuery({
-    queryKey: ['clients', clientSearch],
-    queryFn: () => api.getClients(clientSearch),
-    enabled: clientSearch.length > 0,
+  // Client search - uses debounced value with 3-char minimum
+  const { data: clients, isLoading: clientsLoading } = useQuery({
+    queryKey: ['clients', debouncedSearch],
+    queryFn: () => api.getClients(debouncedSearch),
+    enabled: debouncedSearch.length >= 3,
   });
 
   // Create/Update mutations
@@ -143,9 +152,19 @@ export default function NewInvoice() {
               type="text"
               value={clientSearch}
               onChange={(e) => setClientSearch(e.target.value)}
-              placeholder="Type client name..."
+              placeholder="Type at least 3 characters..."
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
+
+            {/* Loading indicator */}
+            {clientsLoading && clientSearch.length >= 3 && (
+              <div className="mt-2 text-sm text-gray-500">Searching...</div>
+            )}
+
+            {/* Hint for minimum characters */}
+            {clientSearch.length > 0 && clientSearch.length < 3 && (
+              <div className="mt-2 text-sm text-gray-500">Type {3 - clientSearch.length} more character{3 - clientSearch.length > 1 ? 's' : ''}...</div>
+            )}
 
             {clients && clients.length > 0 && (
               <div className="mt-2 border border-gray-200 rounded-lg max-h-60 overflow-y-auto">
@@ -162,7 +181,8 @@ export default function NewInvoice() {
                     className="w-full text-left px-4 py-3 hover:bg-primary-50 border-b last:border-b-0"
                   >
                     <div className="font-medium">{client.name}</div>
-                    {client.email && <div className="text-sm text-gray-600">{client.email}</div>}
+                    {client.address && <div className="text-sm text-gray-600">{client.address}</div>}
+                    {client.email && <div className="text-xs text-gray-500">{client.email}</div>}
                   </button>
                 ))}
               </div>
@@ -171,6 +191,7 @@ export default function NewInvoice() {
             {selectedClient && (
               <div className="mt-4 p-4 bg-primary-50 rounded-lg">
                 <div className="font-medium text-primary-900">{selectedClient.name}</div>
+                {selectedClient.address && <div className="text-sm text-primary-700">{selectedClient.address}</div>}
                 {selectedClient.email && <div className="text-sm text-primary-700">{selectedClient.email}</div>}
                 {selectedClient.phone && <div className="text-sm text-primary-700">{selectedClient.phone}</div>}
               </div>

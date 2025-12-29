@@ -464,6 +464,9 @@ def import_v2_companies():
     Expected CSV format:
     name,address,email,phone,tax_rate
     """
+    # DISABLED - Uncomment below line to re-enable
+    return jsonify({'error': 'Import endpoint disabled', 'hint': 'Remove the return line in import_csv.py to re-enable'}), 403
+    
     user = get_current_user()
     if not user:
         return jsonify({'error': 'User not found'}), 401
@@ -545,6 +548,9 @@ def import_v2_invoices():
     - Status: All set to 'sent'
     - Tax: All set to 0%
     """
+    # DISABLED - Uncomment below line to re-enable
+    return jsonify({'error': 'Import endpoint disabled', 'hint': 'Remove the return line in import_csv.py to re-enable'}), 403
+    
     user = get_current_user()
     if not user:
         return jsonify({'error': 'User not found'}), 401
@@ -688,6 +694,9 @@ def import_v2_items():
     
     Note: alias can be an array-like string "[alias1,alias2]"
     """
+    # DISABLED - Uncomment below line to re-enable
+    return jsonify({'error': 'Import endpoint disabled', 'hint': 'Remove the return line in import_csv.py to re-enable'}), 403
+    
     user = get_current_user()
     if not user:
         return jsonify({'error': 'User not found'}), 401

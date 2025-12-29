@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, Client } from '../api';
 
@@ -6,6 +6,7 @@ export default function Clients() {
   const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -20,6 +21,20 @@ export default function Clients() {
     queryKey: ['clients'],
     queryFn: () => api.getClients(),
   });
+
+  // Filter clients based on search query (frontend filtering for speed)
+  const filteredClients = useMemo(() => {
+    if (!clients) return [];
+    if (!searchQuery.trim()) return clients;
+
+    const query = searchQuery.toLowerCase();
+    return clients.filter(client =>
+      client.name.toLowerCase().includes(query) ||
+      client.address?.toLowerCase().includes(query) ||
+      client.email?.toLowerCase().includes(query) ||
+      client.phone?.includes(query)
+    );
+  }, [clients, searchQuery]);
 
   const createMutation = useMutation({
     mutationFn: api.createClient,
@@ -107,14 +122,30 @@ export default function Clients() {
         </button>
       </div>
 
+      {/* Search Bar */}
+      <div className="mb-6">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search clients by name, address, email, or phone..."
+          className="w-full md:w-96 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+        />
+        {searchQuery && (
+          <p className="text-sm text-gray-500 mt-2">
+            Found {filteredClients.length} client{filteredClients.length !== 1 ? 's' : ''}
+          </p>
+        )}
+      </div>
+
       {/* Client Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {isLoading ? (
           <div className="col-span-full flex justify-center py-12">
             <div className="spinner"></div>
           </div>
-        ) : clients && clients.length > 0 ? (
-          clients.map((client) => (
+        ) : filteredClients && filteredClients.length > 0 ? (
+          filteredClients.map((client) => (
             <div key={client.id} className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
               <div className="flex justify-between items-start mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">{client.name}</h3>
