@@ -207,6 +207,9 @@ def manage_firm():
     if 'show_due_date' in data:
         firm.show_due_date = bool(data['show_due_date'])
     
+    if 'use_invoice_prefix' in data:
+        firm.use_invoice_prefix = bool(data['use_invoice_prefix'])
+    
     # Update bank account fields
     bank_fields = ['bank_name', 'account_number', 'account_holder_name', 'ifsc_code', 'upi_id', 'upi_qr_path']
     bank_data = {k: data[k] for k in bank_fields if k in data}
