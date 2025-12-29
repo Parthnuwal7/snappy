@@ -648,10 +648,17 @@ def import_v2_invoices():
                     db.session.add(item)
                     items_added += 1
                 
+                # Batch commit every 25 new invoices to prevent timeout
+                if invoices_created > 0 and invoices_created % 25 == 0:
+                    # Calculate totals for invoices in cache before commit
+                    for inv in invoice_cache.values():
+                        inv.calculate_totals()
+                    db.session.commit()
+                
             except Exception as e:
                 errors.append(f"Row {row_num}: {str(e)}")
         
-        # Recalculate totals for all invoices
+        # Final commit for remaining invoices
         for inv in invoice_cache.values():
             inv.calculate_totals()
         
