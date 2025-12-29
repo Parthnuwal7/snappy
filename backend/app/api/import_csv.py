@@ -172,6 +172,198 @@ def import_migration():
         return jsonify({'error': f'Import failed: {str(e)}'}), 500
 
 
+@bp.route('/import/clients', methods=['POST'])
+@jwt_required
+def import_clients():
+    """
+    Import clients from CSV.
+    
+    Expected CSV format:
+    name,address,email,phone,tax_id
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    try:
+        content = file.read().decode('utf-8')
+        reader = csv.DictReader(io.StringIO(content))
+        
+        clients_created = 0
+        clients_skipped = 0
+        errors = []
+        
+        # Load existing clients for duplicate check
+        existing_clients = {c.name.lower(): c for c in Client.query.filter_by(user_id=user.id).all()}
+        
+        for row_num, row in enumerate(reader, start=2):
+            try:
+                name = row.get('name', '').strip()
+                if not name:
+                    errors.append(f"Row {row_num}: Missing client name")
+                    continue
+                
+                # Skip if client already exists
+                if name.lower() in existing_clients:
+                    clients_skipped += 1
+                    continue
+                
+                client = Client(
+                    user_id=user.id,
+                    name=name,
+                    address=row.get('address', ''),
+                    email=row.get('email', ''),
+                    phone=row.get('phone', ''),
+                    tax_id=row.get('tax_id', ''),
+                    default_tax_rate=float(row.get('default_tax_rate', 18) or 18)
+                )
+                db.session.add(client)
+                existing_clients[name.lower()] = client
+                clients_created += 1
+                
+            except Exception as e:
+                errors.append(f"Row {row_num}: {str(e)}")
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'clients_created': clients_created,
+            'clients_skipped': clients_skipped,
+            'errors': errors[:20]
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Import failed: {str(e)}'}), 500
+
+
+@bp.route('/import/invoices', methods=['POST'])
+@jwt_required
+def import_invoices():
+    """
+    Import invoices + items from CSV. Clients must already exist.
+    
+    Expected CSV format (one row per line item):
+    invoice_number,client_name,invoice_date,due_date,status,item_description,quantity,rate,tax_rate,short_desc
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    try:
+        content = file.read().decode('utf-8')
+        reader = csv.DictReader(io.StringIO(content))
+        
+        invoices_created = 0
+        items_added = 0
+        errors = []
+        
+        # Load existing clients
+        client_cache = {c.name.lower(): c for c in Client.query.filter_by(user_id=user.id).all()}
+        invoice_cache = {}  # {invoice_number: invoice}
+        
+        for row_num, row in enumerate(reader, start=2):
+            try:
+                # Find client by name
+                client_name = row.get('client_name', '').strip()
+                if not client_name:
+                    errors.append(f"Row {row_num}: Missing client_name")
+                    continue
+                
+                client = client_cache.get(client_name.lower())
+                if not client:
+                    errors.append(f"Row {row_num}: Client '{client_name}' not found. Import clients first.")
+                    continue
+                
+                # Get or create invoice
+                invoice_number = row.get('invoice_number', '').strip()
+                if not invoice_number:
+                    errors.append(f"Row {row_num}: Missing invoice_number")
+                    continue
+                
+                invoice = invoice_cache.get(invoice_number)
+                if not invoice:
+                    # Parse dates
+                    invoice_date = parse_date(row.get('invoice_date', ''))
+                    due_date = parse_date(row.get('due_date', ''))
+                    
+                    if not invoice_date:
+                        invoice_date = datetime.utcnow().date()
+                    
+                    status = row.get('status', 'paid').strip().lower()
+                    if status not in ['draft', 'sent', 'paid', 'void']:
+                        status = 'paid'
+                    
+                    invoice = Invoice(
+                        user_id=user.id,
+                        invoice_number=invoice_number,
+                        client_id=client.id,
+                        invoice_date=invoice_date,
+                        due_date=due_date,
+                        short_desc=row.get('short_desc', ''),
+                        tax_rate=float(row.get('tax_rate', 0) or 0),
+                        status=status,
+                        paid_date=invoice_date if status == 'paid' else None
+                    )
+                    db.session.add(invoice)
+                    db.session.flush()
+                    invoice_cache[invoice_number] = invoice
+                    invoices_created += 1
+                
+                # Add line item
+                description = row.get('item_description', '').strip()
+                if description:
+                    quantity = float(row.get('quantity', 1) or 1)
+                    rate = float(row.get('rate', 0) or 0)
+                    
+                    item = InvoiceItem(
+                        invoice_id=invoice.id,
+                        description=description,
+                        quantity=quantity,
+                        rate=rate,
+                        amount=quantity * rate
+                    )
+                    db.session.add(item)
+                    items_added += 1
+                
+            except Exception as e:
+                errors.append(f"Row {row_num}: {str(e)}")
+        
+        # Recalculate totals for all invoices
+        for inv in invoice_cache.values():
+            inv.calculate_totals()
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'invoices_created': invoices_created,
+            'items_added': items_added,
+            'errors': errors[:20]
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Import failed: {str(e)}'}), 500
+
+
 @bp.route('/import/items', methods=['POST'])
 @jwt_required
 def import_items_catalog():
@@ -209,6 +401,7 @@ def import_items_catalog():
                 item = Item(
                     user_id=user.id,
                     name=name,
+                    alias=row.get('alias', ''),
                     description=row.get('description', ''),
                     default_rate=float(row.get('default_rate', 0) or 0),
                     unit=row.get('unit', 'unit'),
