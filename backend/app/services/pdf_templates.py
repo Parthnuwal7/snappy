@@ -539,10 +539,6 @@ def generate_pdf_half_page(invoice, firm, user_id=None, bank=None, shell_data=No
             f"{CURRENCY_SYMBOL} {item.amount:,.2f}"
         ])
     
-    # Add empty rows if less than 2 items
-    while len(items_data) < 3:
-        items_data.append(['', '', ''])
-    
     items_table = Table(items_data, colWidths=[0.4*inch, 5.1*inch, 1.5*inch])
     items_table.setStyle(TableStyle([
         ('BOX', (0, 0), (-1, -1), 0.5, colors.black),

@@ -358,8 +358,10 @@ export default function InvoiceList() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 space-x-2">
                       <button
-                        onClick={() => {
-                          setPreviewInvoice(invoice);
+                        onClick={async () => {
+                          // Fetch full invoice with items before preview
+                          const fullInvoice = await api.getInvoice(invoice.id);
+                          setPreviewInvoice(fullInvoice);
                           setIsPreviewOpen(true);
                         }}
                         className="text-indigo-600 hover:text-indigo-800"
