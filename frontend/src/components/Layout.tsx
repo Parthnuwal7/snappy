@@ -49,8 +49,8 @@ export default function Layout() {
                 key={item.path}
                 to={item.path}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive
-                    ? 'bg-primary-600 text-white'
-                    : 'text-primary-100 hover:bg-primary-700 hover:text-white'
+                  ? 'bg-primary-600 text-white'
+                  : 'text-primary-100 hover:bg-primary-700 hover:text-white'
                   }`}
               >
                 <span className="text-xl">{item.icon}</span>
@@ -77,7 +77,7 @@ export default function Layout() {
             {sidebarOpen && <span className="font-medium">Logout</span>}
           </button>
           <div className={`text-xs text-primary-300 text-center ${!sidebarOpen && 'hidden'}`}>
-            v1.0.0 • MIT License
+            v1.0.0
           </div>
         </div>
       </aside>

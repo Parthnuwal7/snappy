@@ -59,7 +59,7 @@ website/
   - **Quick Links**: Home, Download, Pricing, Demo
   - **Support**: Contact, About, Documentation, FAQs
   - **Contact**: Email (support@snappy.app), Phone, Location (India)
-- Bottom bar: Copyright "© 2025 SNAPPY by Parth Nuwal", Privacy, Terms, Cookies
+- Bottom bar: Copyright "© 2026 SNAPPY by Parth Nuwal", Privacy, Terms, Cookies
 - Dark gray background with blue hover states
 
 ---

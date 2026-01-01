@@ -286,4 +286,4 @@ For questions about this website:
 
 ## 📄 License
 
-Copyright © 2025 SNAPPY by Parth Nuwal. All rights reserved.
+Copyright © 2026 SNAPPY by Parth Nuwal. All rights reserved.

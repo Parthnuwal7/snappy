@@ -51,7 +51,7 @@ const Download = () => {
         {/* Download Button */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 mb-16 text-white text-center">
           <h2 className="text-3xl font-bold mb-4">SNAPPY for Windows</h2>
-          <p className="text-blue-100 mb-6">Version 1.0.0 • Released: January 2025 • Size: 45MB</p>
+          <p className="text-blue-100 mb-6">Version 1.0.0 • Released: January 2026 • Size: 45MB</p>
           <button className="bg-white text-blue-600 px-10 py-4 rounded-lg hover:bg-gray-100 transition-colors duration-200 inline-flex items-center space-x-3 text-lg font-semibold">
             <DownloadIcon size={24} />
             <span>Download SNAPPY-Setup.msi</span>

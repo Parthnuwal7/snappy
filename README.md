@@ -1,333 +1,151 @@
-# SNAPPY - Local-First Desktop Billing App
+# SNAPPY - Professional Billing & Invoicing Platform
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-Dual-blue.svg)](LICENSE)
+[![Live Demo](https://img.shields.io/badge/Demo-Live-brightgreen)](https://snappy-billing.vercel.app)
 
-SNAPPY is a powerful, local-first desktop billing and invoicing application designed specifically for lawyers and professionals. Built with **Tauri**, **React**, and **Flask**, it prioritizes speed, clean keyboard-first UX, robust analytics, and small bundle size.
+> A full-stack, production-ready billing application built with **React**, **Flask** and **Supabase**. Deployed and serving real users.
 
-## ✨ Features
+## 🏗️ System Architecture
 
-- 📄 **Invoice Management** - Create, edit, and manage invoices with ease
-- 👥 **Client Management** - Maintain detailed client records
-- 📊 **Analytics Dashboard** - Real-time insights with monthly revenue trends, top clients, and aging analysis
-- 🔍 **Fuzzy Search** - Fast client lookup with intelligent matching
-- 📈 **DuckDB Analytics** - High-performance analytics engine
-- 💾 **Backup & Restore** - Encrypted backups with password protection
-- 📥 **CSV Import** - Import clients and invoices with duplicate detection
-- 🎨 **PDF Generation** - Beautiful, customizable invoice PDFs
-- ⌨️ **Keyboard Shortcuts** - Keyboard-first design for power users
-- 🗄️ **SQLite Database** - Reliable local-first storage
+![Snappy System Architecture](snappy_arc.png)
 
-## 🎯 Quick Start
+## 🎯 Project Highlights
 
-### Prerequisites
+| Aspect | Details |
+|--------|---------|
+| **Type** | Full-stack SaaS Application |
+| **Status** | ✅ MVP in Production (Live) |
+| **Users** | Multi-tenant with data isolation |
+| **Deployment** | CI/CD via GitHub → Vercel + Render |
+| **Development Time** | ~1 weeks |
 
-- **Python 3.11+**
-- **Node.js 18+**
-- **Git**
+## ✨ Key Features
 
-### One-Command Setup
+### Core Functionality
+- 📄 **Invoice CRUD** - Full lifecycle management with status tracking
+- 👥 **Client Management** - Contact database with fuzzy search
+- 🎨 **PDF Generation** - Professional invoices with custom templates
+- 📊 **Analytics Dashboard** - Revenue trends, top clients, aging analysis
 
-**Windows:**
-```cmd
-scripts\dev.bat
-```
+### Technical Highlights
+- 🔐 **JWT Authentication** - Secure token-based auth via Supabase
+- ⚡ **Multi-tenant Architecture** - Complete data isolation per user
+- 🔍 **Fuzzy Search** - RapidFuzz-powered intelligent matching
+- 📈 **DuckDB Analytics** - High-performance OLAP for reporting
+- �️ **Image Caching** - Optimized logo/signature loading
+- 📥 **Bulk Import** - CSV import with validation & deduplication
 
-**Linux/macOS:**
-```bash
-chmod +x scripts/dev.sh
-./scripts/dev.sh
-```
+## 🛠️ Tech Stack
 
-This will:
-1. Create Python virtual environment and install dependencies
-2. Install frontend dependencies
-3. Start Flask backend on http://localhost:5000
-4. Start React frontend on http://localhost:5173
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | React 18 + TypeScript + Vite |
+| **Styling** | Tailwind CSS |
+| **State Management** | TanStack Query (React Query) |
+| **Backend** | Flask (Python 3.11) |
+| **Database** | PostgreSQL (Supabase) |
+| **Authentication** | Supabase Auth (JWT) |
+| **File Storage** | Supabase Storage |
+| **PDF Engine** | ReportLab |
+| **Analytics DB** | DuckDB |
+| **Search** | RapidFuzz |
+| **Frontend Hosting** | Vercel |
+| **Backend Hosting** | Render |
 
-## 📦 Manual Installation
+## 🧠 Technical Decisions & Rationale
 
-### Backend Setup
+### Why Flask over FastAPI?
+- Mature ecosystem with ReportLab for PDF generation
+- Simpler deployment on Render with Gunicorn
+- Sufficient for current scale; async not required
 
-```cmd
-cd backend
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-```
+### Why Supabase over Firebase?
+- PostgreSQL flexibility for complex queries
+- Row Level Security (RLS) for multi-tenancy
+- Unified auth, database, and storage
 
-Create `.env` file from `.env.example`:
-```cmd
-copy .env.example .env
-```
+### Why DuckDB for Analytics?
+- Embedded OLAP database - no separate server
+- 10x faster aggregations than PostgreSQL for analytics
+- Per-user data sync with 24-hour TTL caching
 
-### Frontend Setup
+### Why TanStack Query over Redux?
+- Built-in caching and deduplication
+- Automatic background refetching
+- Simpler mental model for server state
 
-```cmd
-cd frontend
-npm install
-```
-
-### Seed Database (Optional)
-
-```cmd
-python scripts\seed_db.py
-```
-
-This creates 10 sample clients and 20 invoices spanning the last 12 months.
-
-## 🚀 Running the Application
-
-### Development Mode
-
-**Start Backend:**
-```cmd
-cd backend
-venv\Scripts\activate
-set FLASK_APP=app\main.py
-set FLASK_ENV=development
-python -m flask run --port=5000
-```
-
-**Start Frontend:**
-```cmd
-cd frontend
-npm run dev
-```
-
-Access the application at: http://localhost:5173
-
-### Production Build
-
-```cmd
-cd frontend
-npm run build
-```
-
-## 📚 API Documentation
-
-### Base URL
-```
-http://localhost:5000/api
-```
-
-### Endpoints
-
-#### Clients
-- `GET /clients` - List all clients (supports `?search=` parameter)
-- `GET /clients/{id}` - Get client details
-- `POST /clients` - Create new client
-- `PUT /clients/{id}` - Update client
-- `DELETE /clients/{id}` - Delete client
-
-#### Invoices
-- `GET /invoices` - List invoices (filters: `client_id`, `status`, `start_date`, `end_date`, `search`)
-- `GET /invoices/{id}` - Get invoice with items
-- `POST /invoices` - Create new invoice
-- `PUT /invoices/{id}` - Update invoice
-- `POST /invoices/{id}/mark_paid` - Mark invoice as paid
-- `POST /invoices/{id}/generate_pdf` - Generate PDF
-- `DELETE /invoices/{id}` - Void invoice
-
-#### Analytics
-- `GET /analytics/monthly` - Monthly revenue data
-- `GET /analytics/top_clients` - Top clients by revenue
-- `GET /analytics/aging` - Aging buckets for unpaid invoices
-
-#### Import/Export
-- `POST /import/csv` - Import clients or invoices from CSV
-- `POST /backup` - Create database backup
-- `POST /restore` - Restore from backup
-
-### Example Request
-
-**Create Invoice:**
-```json
-POST /api/invoices
-{
-  "client_id": 1,
-  "invoice_date": "2025-01-20",
-  "due_date": "2025-02-20",
-  "short_desc": "Legal consultation services",
-  "tax_rate": 18.0,
-  "items": [
-    {
-      "description": "Contract review and advisory",
-      "quantity": 2,
-      "rate": 15000,
-      "amount": 30000
-    }
-  ]
-}
-```
-
-## ⌨️ Keyboard Shortcuts
-
-- `Ctrl/Cmd + N` - New Invoice
-- `Ctrl/Cmd + S` - Save
-- `Ctrl/Cmd + E` - Export PDF
-- `Ctrl/Cmd + P` - Print
-- `Ctrl/Cmd + K` - Focus Search
-
-## 🏗️ Project Structure
+## 📁 Project Structure
 
 ```
 snappy/
-├── backend/                # Flask backend
+├── backend/                 # Flask REST API
 │   ├── app/
-│   │   ├── main.py        # Flask app factory
-│   │   ├── api/           # API endpoints
-│   │   ├── models/        # SQLAlchemy models
-│   │   └── services/      # Business logic
-│   ├── requirements.txt
-│   └── tests/
-├── frontend/              # React frontend
+│   │   ├── api/            # Route handlers
+│   │   │   ├── auth.py     # User & firm management
+│   │   │   ├── clients.py  # Client CRUD + fuzzy search
+│   │   │   ├── invoices.py # Invoice CRUD + PDF generation
+│   │   │   └── analytics.py
+│   │   ├── models/         # SQLAlchemy ORM models
+│   │   ├── services/       # Business logic
+│   │   │   ├── pdf_templates.py  # ReportLab PDF generation
+│   │   │   └── duckdb_service.py # Analytics engine
+│   │   └── middleware/     # JWT validation
+│   └── requirements.txt
+│
+├── frontend/               # React SPA
 │   ├── src/
-│   │   ├── pages/        # Page components
-│   │   ├── components/   # Reusable components
-│   │   ├── App.tsx
-│   │   └── api.ts        # API client
-│   ├── package.json
-│   └── vite.config.ts
-├── scripts/
-│   ├── dev.bat           # Windows dev script
-│   ├── dev.sh            # Linux/macOS dev script
-│   └── seed_db.py        # Database seeder
-├── src-tauri/            # Tauri configuration
-├── .env.example          # Environment template
-└── README.md
+│   │   ├── pages/         # Route components
+│   │   ├── components/    # Reusable UI components
+│   │   ├── contexts/      # React Context (Auth)
+│   │   └── api.ts         # Type-safe API client
+│   └── package.json
+│
+└── snappy_arc.png         # Architecture diagram
 ```
 
-## 🗄️ Database Schema
+## � Security Implementation
 
-### Clients Table
-- `id` - Primary key
-- `name` - Client name (required)
-- `email`, `phone`, `address` - Contact details
-- `tax_id` - Tax identification
-- `default_tax_rate` - Default tax percentage
-- `notes` - Additional notes
+- **Authentication**: Supabase JWT with HS256 verification
+- **Authorization**: All queries filtered by `user_id` from JWT
+- **Data Isolation**: Multi-tenant design - users cannot access others' data
+- **Storage Security**: Signed URLs with expiration for images
+- **Input Validation**: Server-side validation on all endpoints
 
-### Invoices Table
-- `id` - Primary key
-- `invoice_number` - Unique invoice number (LAW/YYYY/NNNN)
-- `client_id` - Foreign key to clients
-- `invoice_date`, `due_date` - Dates
-- `short_desc` - Brief description
-- `subtotal`, `tax_rate`, `tax_amount`, `total` - Amounts
-- `status` - draft | sent | paid | void
-- `signature_path` - Path to signature image
 
-### Invoice Items Table
-- `id` - Primary key
-- `invoice_id` - Foreign key to invoices
-- `description` - Item description
-- `quantity`, `rate`, `amount` - Pricing details
+## 🚀 Deployment
 
-## 🧪 Testing
+### Frontend (Vercel)
+- Auto-deploy on push to `main`
+- Environment variables configured in Vercel dashboard
 
-### Backend Tests
-```cmd
-cd backend
-pytest
-```
+### Backend (Render)
+- Web Service with auto-deploy
+- Gunicorn WSGI server
+- PostgreSQL via Supabase (external)
 
-### Linting
-```cmd
-# Backend
-cd backend
-black .
-flake8 .
+## 📈 Performance Optimizations
 
-# Frontend
-cd frontend
-npm run lint
-npm run format
-```
+1. **Template Shell Caching** - Pre-cache static PDF elements per user
+2. **Image Caching** - In-memory cache for logos/signatures
+3. **JWT Secret Caching** - Single load, not per-request
+4. **DuckDB Sync Throttling** - Once per 24 hours per user
+5. **TanStack Query** - Client-side caching with stale-while-revalidate
 
-## 📋 CSV Import Format
+## 🎓 Skills Demonstrated
 
-### Clients CSV
-```csv
-name,email,phone,address,tax_id,default_tax_rate
-"Sharma & Associates","contact@sharma.com","+91-98765-43210","123 Legal Plaza, New Delhi","GSTIN123",18.0
-```
-
-### Invoices CSV
-```csv
-client_name,invoice_date,description,amount,quantity,tax_rate
-"Sharma & Associates","2025-01-15","Legal consultation",25000,1,18.0
-```
-
-## 🔒 Security
-
-- **Local-First**: No remote servers by default
-- **Encrypted Backups**: AES-256 encryption with password
-- **No Telemetry**: Zero data collection
-- **APP PIN Lock**: Optional PIN protection (Settings)
-
-## 🎨 Customization
-
-### Invoice Template
-Edit `backend/app/services/pdf_service.py` to customize the invoice HTML template with Tailwind CSS classes.
-
-### Currency
-Modify `.env`:
-```
-CURRENCY=INR
-```
-
-### Invoice Numbering
-Update in Settings UI or `.env`:
-```
-INVOICE_PREFIX=LAW
-```
-
-## 🚧 Tauri Desktop Build
-
-**Coming Soon** - Full Tauri integration for standalone desktop builds.
-
-```cmd
-cd frontend
-npm run tauri:build
-```
-
-## 🤝 Contributing
-
-This is an open-source project under the MIT License. Contributions are welcome!
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+- **Full-Stack Development** - React frontend + Flask backend
+- **Database Design** - Multi-tenant PostgreSQL schema
+- **Authentication** - JWT implementation with Supabase
+- **API Design** - RESTful endpoints with proper error handling
+- **State Management** - TanStack Query for server state
+- **PDF Generation** - Programmatic PDF creation with ReportLab
+- **Cloud Deployment** - Vercel + Render with CI/CD
+- **Performance Optimization** - Caching strategies, query optimization
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🐛 Known Issues
-
-- Tauri integration pending (currently web-based)
-- E2E tests to be added
-- CI/CD pipeline in progress
-
-## 📞 Support
-
-For issues, questions, or suggestions:
-- Open an issue on GitHub
-- Check existing issues for solutions
-
-## 🎯 Roadmap
-
-- [ ] Complete Tauri desktop packaging
-- [ ] E2E tests with Playwright
-- [ ] Multi-currency support
-- [ ] Email invoice delivery
-- [ ] Recurring invoices
-- [ ] Payment reminders
-- [ ] Custom report builder
-- [ ] Multi-language support
+Dual License - Free for educational/non-commercial use. Commercial use requires a paid license - see [LICENSE](LICENSE)
 
 ---
 
-**Built with ❤️ for lawyers and professionals who value speed, privacy, and control.**
+**Built by Parth Nuwal** | [GitHub](https://github.com/Parthnuwal7) | [LinkedIn](www.linkedin.com/in/parth-nuwal-9a81b9226)

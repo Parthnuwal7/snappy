@@ -36,7 +36,7 @@ const About = () => {
       description: 'After months of development and testing with legal professionals, SNAPPY v1.0 was launched.',
     },
     {
-      year: '2025',
+      year: '2026',
       title: 'Growing Community',
       description: 'Hundreds of professionals now trust SNAPPY for their billing needs. We continue to add features based on feedback.',
     },
