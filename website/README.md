@@ -281,8 +281,8 @@ Edit `src/pages/Home.tsx` → `features` array
 ## 📞 Support
 
 For questions about this website:
-- Email: parth@snappy.app
-- GitHub: [Your GitHub]
+- Email: parthnuwal7@gmail.com
+- GitHub: https://github.com/parthnuwal7
 
 ## 📄 License
 

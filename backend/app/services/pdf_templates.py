@@ -421,8 +421,9 @@ def generate_pdf_half_page(invoice, firm, user_id=None, bank=None, shell_data=No
     title_data = [['Invoice']]
     title_table = Table(title_data, colWidths=[7*inch])
     title_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.black),
-        ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
         ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, -1), 12),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
