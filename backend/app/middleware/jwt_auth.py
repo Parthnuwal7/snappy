@@ -54,13 +54,18 @@ def jwt_required(f):
             return jsonify({'error': 'JWT authentication not configured'}), 500
         
         try:
-            # Decode and verify the JWT token
-            # Supabase uses HS256 algorithm
+            # Decode and verify the JWT token. Supabase signs with HS256.
+            # `leeway` tolerates small clock skew between Supabase (issuer)
+            # and the local machine running the backend. Without it, a
+            # freshly-issued token can be rejected with "not yet valid (iat)"
+            # for a few hundred ms after login on machines whose clocks lag
+            # NTP. 10s is generous and safe — JWTs are still expiry-checked.
             payload = jwt.decode(
                 token,
                 jwt_secret,
                 algorithms=['HS256'],
-                audience='authenticated'
+                audience='authenticated',
+                leeway=10,
             )
             
             # Extract user ID from the 'sub' claim
@@ -99,14 +104,15 @@ def jwt_optional(f):
         if auth_header.startswith('Bearer '):
             token = auth_header.split(' ', 1)[1]
             jwt_secret = get_jwt_secret()
-            
+
             if token and jwt_secret:
                 try:
                     payload = jwt.decode(
                         token,
                         jwt_secret,
                         algorithms=['HS256'],
-                        audience='authenticated'
+                        audience='authenticated',
+                        leeway=10,
                     )
                     g.user_id = payload.get('sub')
                     g.user_email = payload.get('email')

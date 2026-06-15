@@ -1,151 +1,139 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { ArrowLeft, CheckCircle2 } from 'lucide-react';
 
 export default function ResetPassword() {
-    const navigate = useNavigate();
-    const { updatePassword } = useAuth();
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [error, setError] = useState('');
-    const [success, setSuccess] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  const { updatePassword } = useAuth();
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-    // Check if we have a valid recovery session
-    useEffect(() => {
-        // Supabase will have set the session from the URL hash
-        // If no session, redirect to login
-        const hash = window.location.hash;
-        if (!hash.includes('type=recovery')) {
-            // Not a recovery link - check if we have a valid session
-            // The AuthContext will handle this
-        }
-    }, []);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await updatePassword(password);
+      setSuccess(true);
+      setTimeout(() => navigate('/login'), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reset password.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError('');
-
-        if (password.length < 6) {
-            setError('Password must be at least 6 characters long');
-            return;
-        }
-
-        if (password !== confirmPassword) {
-            setError('Passwords do not match');
-            return;
-        }
-
-        setIsLoading(true);
-
-        try {
-            await updatePassword(password);
-            setSuccess(true);
-            // Redirect to login after 3 seconds
-            setTimeout(() => {
-                navigate('/login');
-            }, 3000);
-        } catch (err: unknown) {
-            const errorMessage = err instanceof Error ? err.message : 'Failed to reset password. Please try again.';
-            setError(errorMessage);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
-            <div className="max-w-md w-full">
-                {/* Logo/Brand */}
-                <div className="text-center mb-8">
-                    <h1 className="text-4xl font-bold text-indigo-600 mb-2">SNAPPY</h1>
-                    <p className="text-gray-600">Professional Billing Software</p>
-                </div>
-
-                {/* Reset Password Card */}
-                <div className="bg-white rounded-lg shadow-xl p-8">
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Reset Password</h2>
-                    <p className="text-gray-600 mb-6">
-                        Enter your new password below.
-                    </p>
-
-                    {error && (
-                        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">
-                            {error}
-                        </div>
-                    )}
-
-                    {success ? (
-                        <div className="text-center">
-                            <div className="mb-4 p-4 bg-green-50 border border-green-200 text-green-700 rounded-md">
-                                <svg className="w-12 h-12 mx-auto mb-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <p className="font-medium">Password Reset Successfully!</p>
-                                <p className="text-sm mt-1">
-                                    Redirecting you to login...
-                                </p>
-                            </div>
-                        </div>
-                    ) : (
-                        <form onSubmit={handleSubmit} className="space-y-5">
-                            <div>
-                                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                                    New Password
-                                </label>
-                                <input
-                                    id="password"
-                                    type="password"
-                                    required
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                                    placeholder="Min. 6 characters"
-                                    disabled={isLoading}
-                                />
-                            </div>
-
-                            <div>
-                                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                                    Confirm New Password
-                                </label>
-                                <input
-                                    id="confirmPassword"
-                                    type="password"
-                                    required
-                                    value={confirmPassword}
-                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                                    placeholder="Re-enter new password"
-                                    disabled={isLoading}
-                                />
-                            </div>
-
-                            <button
-                                type="submit"
-                                disabled={isLoading}
-                                className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                            >
-                                {isLoading ? 'Resetting...' : 'Reset Password'}
-                            </button>
-                        </form>
-                    )}
-
-                    {/* Back to Login Link */}
-                    {!success && (
-                        <div className="mt-6 text-center">
-                            <Link to="/login" className="text-sm text-indigo-600 hover:text-indigo-700 font-medium">
-                                ← Back to Sign In
-                            </Link>
-                        </div>
-                    )}
-                </div>
-
-                {/* Footer */}
-                <div className="mt-6 text-center text-sm text-gray-600">
-                    <p>© 2025 SNAPPY. All rights reserved.</p>
-                </div>
-            </div>
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-paper px-6 py-12">
+      <div className="w-full max-w-md animate-fade-up">
+        <div className="mb-8 text-center">
+          <span
+            className="font-display text-4xl text-ink"
+            style={{ fontVariationSettings: '"opsz" 144, "wght" 500, "SOFT" 30' }}
+          >
+            Snappy
+          </span>
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-oxblood mb-1 ml-1.5" />
         </div>
-    );
+
+        <div className="card p-10">
+          {success ? (
+            <div className="text-center">
+              <div className="mx-auto w-12 h-12 rounded-full bg-status-paid-wash border border-status-paid/30
+                              flex items-center justify-center mb-5">
+                <CheckCircle2 size={20} strokeWidth={1.5} className="text-status-paid" />
+              </div>
+              <div className="page-eyebrow">Done</div>
+              <h1 className="page-title !text-3xl mt-1">Password updated.</h1>
+              <p className="page-subtitle mx-auto">
+                Redirecting you to sign in&hellip;
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="mb-8">
+                <div className="page-eyebrow">New password</div>
+                <h1 className="page-title !text-3xl">Set a new password.</h1>
+                <p className="page-subtitle">
+                  Choose something memorable. Minimum six characters.
+                </p>
+              </div>
+
+              {error && (
+                <div className="alert-error mb-6 animate-fade-in" role="alert">{error}</div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-5">
+                <div>
+                  <label htmlFor="password" className="field-label">New password</label>
+                  <input
+                    id="password"
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="field-input"
+                    placeholder="At least 6 characters"
+                    disabled={isLoading}
+                    autoFocus
+                    autoComplete="new-password"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="confirmPassword" className="field-label">Confirm</label>
+                  <input
+                    id="confirmPassword"
+                    type="password"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="field-input"
+                    placeholder="Re-enter new password"
+                    disabled={isLoading}
+                    autoComplete="new-password"
+                  />
+                </div>
+
+                <button type="submit" disabled={isLoading} className="btn-primary w-full py-3">
+                  {isLoading ? (
+                    <>
+                      <span className="spinner !w-4 !h-4 !border-paper/40 !border-t-paper" />
+                      <span>Updating…</span>
+                    </>
+                  ) : (
+                    <span>Update password</span>
+                  )}
+                </button>
+              </form>
+
+              <div className="mt-8 pt-6 border-t border-rule text-center">
+                <Link to="/login"
+                      className="inline-flex items-center gap-1.5 text-sm text-ink-muted hover:text-oxblood transition-colors">
+                  <ArrowLeft size={14} strokeWidth={2} />
+                  <span>Back to sign in</span>
+                </Link>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="mt-8 text-2xs text-ink-faint tracking-eyebrow uppercase text-center">
+          © 2026 Snappy
+        </div>
+      </div>
+    </div>
+  );
 }

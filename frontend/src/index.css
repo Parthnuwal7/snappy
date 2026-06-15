@@ -2,50 +2,282 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =========================================================================
+   Base
+   ========================================================================= */
+
 @layer base {
-  * {
-    border-color: theme('colors.gray.200');
+  :root {
+    /* Variable-font axes — Fraunces optical sizing + softness/wonk */
+    font-feature-settings: 'kern', 'liga', 'clig', 'calt', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
+
+  * {
+    border-color: theme('colors.rule.DEFAULT');
+  }
+
+  html {
+    background-color: theme('colors.paper.DEFAULT');
+  }
+
   body {
-    @apply bg-gray-50 text-gray-900;
+    @apply bg-paper text-ink font-sans text-base antialiased;
+    font-variation-settings: 'wght' 400;
+  }
+
+  /* Display family uses Fraunces with optical sizing engaged */
+  .font-display,
+  h1, h2, h3 {
+    font-family: theme('fontFamily.display');
+    font-variation-settings: 'opsz' 144, 'wght' 500, 'SOFT' 30;
+  }
+
+  /* Tabular figures for any money */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'lnum';
+  }
+
+  /* Form elements inherit the paper aesthetic — no default browser chrome */
+  input, textarea, select, button {
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+  }
+
+  input:focus, textarea:focus, select:focus {
+    outline: none;
+  }
+
+  ::selection {
+    background-color: theme('colors.oxblood.wash');
+    color: theme('colors.oxblood.deep');
   }
 }
+
+/* =========================================================================
+   Component primitives
+   ========================================================================= */
+
+@layer components {
+
+  /* --- Eyebrow / small-caps label ---------------------------------------- */
+  .eyebrow {
+    @apply text-2xs font-medium uppercase tracking-eyebrow text-ink-muted;
+  }
+
+  /* --- Page header ------------------------------------------------------- */
+  .page-eyebrow {
+    @apply eyebrow text-oxblood;
+  }
+  .page-title {
+    @apply font-display text-4xl text-ink mt-2;
+    font-variation-settings: 'opsz' 144, 'wght' 500, 'SOFT' 30;
+  }
+  .page-subtitle {
+    @apply text-base text-ink-muted mt-1 max-w-prose;
+  }
+
+  /* --- Section header on a page ----------------------------------------- */
+  .section-title {
+    @apply font-display text-2xl text-ink;
+    font-variation-settings: 'opsz' 48, 'wght' 500, 'SOFT' 20;
+  }
+
+  /* --- Card --------------------------------------------------------------
+     Paper card: surface white on cream page, hairline border, no shadow.
+     Lifts subtly through colour contrast, not elevation. */
+  .card {
+    @apply bg-surface border border-rule rounded-DEFAULT;
+  }
+  .card-padded {
+    @apply card p-6;
+  }
+  .card-sunken {
+    @apply bg-paper-deep border border-rule rounded-DEFAULT;
+  }
+
+  /* --- Hairline divider -------------------------------------------------- */
+  .hairline {
+    @apply border-t border-rule;
+  }
+
+  /* --- Buttons ----------------------------------------------------------- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2
+           text-sm font-medium rounded-DEFAULT transition-all duration-150
+           disabled:opacity-40 disabled:cursor-not-allowed
+           focus-visible:outline-none focus-visible:ring-2
+           focus-visible:ring-oxblood focus-visible:ring-offset-2
+           focus-visible:ring-offset-paper select-none;
+  }
+
+  /* Primary: oxblood seal */
+  .btn-primary {
+    @apply btn bg-oxblood text-paper hover:bg-oxblood-deep
+           shadow-seal active:translate-y-px;
+  }
+
+  /* Secondary: paper with ink border */
+  .btn-secondary {
+    @apply btn bg-surface text-ink border border-rule-strong
+           hover:bg-paper-deep hover:border-ink active:translate-y-px;
+  }
+
+  /* Ghost: subtle, for tertiary actions */
+  .btn-ghost {
+    @apply btn text-ink-soft hover:text-ink hover:bg-paper-deep;
+  }
+
+  /* Link button: looks like text but acts like button */
+  .btn-link {
+    @apply text-oxblood hover:text-oxblood-deep underline underline-offset-2
+           decoration-1 decoration-oxblood/40 hover:decoration-oxblood
+           transition-colors;
+  }
+
+  /* --- Form inputs ------------------------------------------------------- */
+  .field-label {
+    @apply block text-2xs font-medium uppercase tracking-eyebrow
+           text-ink-muted mb-1.5;
+  }
+
+  .field-input {
+    @apply w-full bg-surface border border-rule rounded-DEFAULT
+           px-3 py-2 text-base text-ink placeholder:text-ink-faint
+           transition-colors duration-150
+           hover:border-rule-strong
+           focus:border-ink focus:bg-surface
+           focus:shadow-[inset_0_-2px_0_theme(colors.oxblood.DEFAULT)]
+           disabled:bg-paper-deep disabled:text-ink-muted;
+  }
+
+  .field-textarea {
+    @apply field-input resize-y min-h-[5rem] leading-relaxed;
+  }
+
+  .field-select {
+    @apply field-input appearance-none bg-no-repeat pr-9;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236B6358' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.6rem center;
+    background-size: 1.1em 1.1em;
+  }
+
+  .field-hint {
+    @apply text-xs text-ink-muted mt-1.5;
+  }
+
+  .field-error {
+    @apply text-xs text-oxblood mt-1.5;
+  }
+
+  /* --- Status pill ------------------------------------------------------- */
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded-sm
+           text-2xs font-medium uppercase tracking-eyebrow;
+  }
+  .pill-paid    { @apply pill bg-status-paid-wash    text-status-paid; }
+  .pill-pending { @apply pill bg-status-pending-wash text-status-pending; }
+  .pill-overdue { @apply pill bg-status-overdue-wash text-status-overdue; }
+  .pill-draft   { @apply pill bg-status-draft-wash   text-status-draft; }
+
+  /* --- Editorial decorative number plate -------------------------------- */
+  .number-plate {
+    @apply font-display text-ink;
+    font-variation-settings: 'opsz' 144, 'wght' 400, 'SOFT' 40;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  /* --- Tables ------------------------------------------------------------ */
+  .table-editorial {
+    @apply w-full border-collapse;
+  }
+  .table-editorial th {
+    @apply text-left text-2xs font-medium uppercase tracking-eyebrow
+           text-ink-muted py-3 px-4 border-b border-rule-strong;
+  }
+  .table-editorial td {
+    @apply text-sm text-ink py-3.5 px-4 border-b border-rule-soft align-middle;
+  }
+  .table-editorial tbody tr:last-child td {
+    @apply border-b-0;
+  }
+  .table-editorial tbody tr:hover {
+    @apply bg-paper-deep/50;
+  }
+
+  /* --- Alert / inline message -------------------------------------------- */
+  .alert {
+    @apply px-4 py-3 rounded-DEFAULT border text-sm;
+  }
+  .alert-error {
+    @apply alert bg-oxblood-wash border-oxblood/30 text-oxblood-deep;
+  }
+  .alert-success {
+    @apply alert bg-status-paid-wash border-status-paid/30 text-status-paid;
+  }
+  .alert-info {
+    @apply alert bg-paper-deep border-rule text-ink-soft;
+  }
+}
+
+/* =========================================================================
+   Utility extensions
+   ========================================================================= */
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
+  .text-balance { text-wrap: balance; }
+  .text-pretty  { text-wrap: pretty; }
+
+  /* Decorative ruled paper texture — extremely subtle horizontal lines */
+  .bg-ruled {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 31px,
+      theme('colors.rule.soft') 31px,
+      theme('colors.rule.soft') 32px
+    );
   }
+
+  /* Stagger helper for child reveal on page load */
+  .stagger > * { animation: fadeUp 500ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .stagger > *:nth-child(1) { animation-delay: 0ms;   }
+  .stagger > *:nth-child(2) { animation-delay: 60ms;  }
+  .stagger > *:nth-child(3) { animation-delay: 120ms; }
+  .stagger > *:nth-child(4) { animation-delay: 180ms; }
+  .stagger > *:nth-child(5) { animation-delay: 240ms; }
+  .stagger > *:nth-child(6) { animation-delay: 300ms; }
+  .stagger > *:nth-child(7) { animation-delay: 360ms; }
+  .stagger > *:nth-child(8) { animation-delay: 420ms; }
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+/* =========================================================================
+   Native browser bits — scrollbar, selection, etc.
+   ========================================================================= */
 
-::-webkit-scrollbar-track {
-  @apply bg-gray-100;
+::-webkit-scrollbar      { width: 10px; height: 10px; }
+::-webkit-scrollbar-track{ background: theme('colors.paper.DEFAULT'); }
+::-webkit-scrollbar-thumb{
+  background: theme('colors.rule.DEFAULT');
+  border: 2px solid theme('colors.paper.DEFAULT');
+  border-radius: 9999px;
 }
+::-webkit-scrollbar-thumb:hover { background: theme('colors.rule.strong'); }
 
-::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-400;
-}
-
-/* Loading spinner */
+/* Loading spinner — used during data fetches */
 .spinner {
-  border: 2px solid #f3f3f3;
-  border-top: 2px solid #3b82f6;
+  border: 1.5px solid theme('colors.rule.DEFAULT');
+  border-top-color: theme('colors.oxblood.DEFAULT');
   border-radius: 50%;
-  width: 20px;
-  height: 20px;
-  animation: spin 1s linear infinite;
+  width: 18px;
+  height: 18px;
+  animation: spin 800ms linear infinite;
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  to { transform: rotate(360deg); }
 }

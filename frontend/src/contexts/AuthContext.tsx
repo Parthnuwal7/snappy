@@ -104,6 +104,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Profile doesn't exist yet - user needs to complete onboarding
         setProfile(null);
         setFirm(null);
+      } else {
+        // Transient error (most commonly 401 from JWT clock-skew on first
+        // call after login). Don't blank out the profile — leave whatever
+        // state we had so the user isn't bounced to /onboarding just because
+        // one request failed. Log so we can see it in dev tools.
+        const body = await response.text().catch(() => '');
+        console.warn(
+          `[auth/me] ${response.status} ${response.statusText} — keeping prior profile state`,
+          body,
+        );
       }
     } catch (error) {
       console.error('Error fetching profile:', error);

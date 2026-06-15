@@ -190,7 +190,7 @@ def number_to_words_indian(num):
 def generate_pdf_simple(invoice, firm):
     """Generate Simple template PDF (original template)"""
     from app.services.pdf_service import generate_pdf as original_generate_pdf
-    return original_generate_pdf(invoice)
+    return original_generate_pdf(invoice, firm)
 
 
 def generate_pdf_law_001(invoice, firm):

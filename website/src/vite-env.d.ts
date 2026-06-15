@@ -1,8 +1,8 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_API_URL: string
-  // add more env variables as needed
+  /** URL of the SNAPPY billing app users get sent to from marketing CTAs. */
+  readonly VITE_APP_URL: string
 }
 
 interface ImportMeta {

@@ -1,18 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../api';
 import ImageUpload from '../components/ImageUpload';
+import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const { refreshProfile } = useAuth();
+  const { refreshProfile, isOnboarded, isLoading: isAuthLoading } = useAuth();
+
+  useEffect(() => {
+    if (!isAuthLoading && isOnboarded) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [isAuthLoading, isOnboarded, navigate]);
+
   const [step, setStep] = useState(1);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isNavigating, setIsNavigating] = useState(false); // Prevent submit during step change
+  const [isNavigating, setIsNavigating] = useState(false);
 
-  // Form state
   const [formData, setFormData] = useState({
     firm_name: '',
     firm_address: '',
@@ -25,13 +32,15 @@ export default function Onboarding() {
     account_holder_name: '',
     ifsc_code: '',
     upi_id: '',
-    billing_terms: 'Payment due within 30 days of invoice date.\nLate payments may incur additional charges.\nAll disputes subject to local jurisdiction.',
-    // Set default preferences (user can change later in Settings)
+    billing_terms:
+      'Payment due within 30 days of invoice date.\n' +
+      'Late payments may incur additional charges.\n' +
+      'All disputes subject to local jurisdiction.',
     default_template: 'LAW_001',
     invoice_prefix: 'LAW',
     default_tax_rate: 18.0,
     currency: 'INR',
-    confirmSetup: false, // Mandatory checkbox to confirm setup
+    confirmSetup: false,
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -43,77 +52,37 @@ export default function Onboarding() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
-    // Handle Enter key behavior
     if (e.key === 'Enter') {
       const target = e.target as HTMLElement;
-      const tagName = target.tagName.toUpperCase();
-
-      // Always prevent submit on Enter in input fields (not textareas or buttons)
-      if (tagName === 'INPUT') {
+      if (target.tagName.toUpperCase() === 'INPUT') {
         e.preventDefault();
         e.stopPropagation();
-
-        // On step 1: Enter in input field acts as Next button
         if (step < 2) {
           setIsNavigating(true);
-          setTimeout(() => {
-            nextStep();
-            setIsNavigating(false);
-          }, 100);
+          setTimeout(() => { nextStep(); setIsNavigating(false); }, 100);
           return;
         }
-
-        // On step 2: Enter in input field acts as Tab
         const form = e.currentTarget;
-        const focusableElements = form.querySelectorAll(
+        const focusable = Array.from(form.querySelectorAll(
           'input:not([disabled]), textarea:not([disabled]), select:not([disabled])'
-        );
-        const focusableArray = Array.from(focusableElements) as HTMLElement[];
-        const currentIndex = focusableArray.indexOf(target);
-
-        if (currentIndex > -1 && currentIndex < focusableArray.length - 1) {
-          focusableArray[currentIndex + 1].focus();
-        }
-        return;
+        )) as HTMLElement[];
+        const idx = focusable.indexOf(target);
+        if (idx > -1 && idx < focusable.length - 1) focusable[idx + 1].focus();
       }
-
-      // For textareas and buttons, allow default behavior (newlines in textarea, click on button)
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Form submitted, current step:', step, 'isNavigating:', isNavigating);
     setError('');
-
-    // Prevent submission if navigating between steps or not on final step
-    if (isNavigating || step < 2) {
-      console.log('Preventing submission - not ready');
-      return;
-    }
-
-    // Validation
-    if (!formData.firm_name.trim()) {
-      setError('Firm name is required');
-      return;
-    }
-
-    if (!formData.firm_address.trim()) {
-      setError('Firm address is required');
-      return;
-    }
+    if (isNavigating || step < 2) return;
+    if (!formData.firm_name.trim()) return setError('Firm name is required');
+    if (!formData.firm_address.trim()) return setError('Firm address is required');
 
     setIsLoading(true);
-
     try {
       await api.onboard(formData);
-      // Refresh user data to update onboarding status
-      try {
-        await refreshProfile();
-      } catch (refreshError) {
-        console.error('Failed to refresh user data:', refreshError);
-      }
-      // Navigate regardless of refresh success
+      try { await refreshProfile(); } catch (err) { console.error(err); }
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Onboarding failed. Please try again.');
@@ -123,335 +92,282 @@ export default function Onboarding() {
   };
 
   const nextStep = () => {
-    console.log('Next step clicked, current step:', step);
     if (step === 1) {
-      if (!formData.firm_name.trim()) {
-        setError('Firm name is required');
-        return;
-      }
-      if (!formData.firm_address.trim()) {
-        setError('Firm address is required');
-        return;
-      }
+      if (!formData.firm_name.trim()) return setError('Firm name is required');
+      if (!formData.firm_address.trim()) return setError('Firm address is required');
     }
     setError('');
-    console.log('Moving to step:', step + 1);
     setStep(step + 1);
   };
 
-  const prevStep = () => {
-    setError('');
-    setStep(step - 1);
-  };
+  const prevStep = () => { setError(''); setStep(step - 1); };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
-      <div className="max-w-3xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-indigo-600 mb-2">Welcome to SNAPPY</h1>
-          <p className="text-gray-600">Let's set up your firm profile</p>
+    <div className="min-h-screen bg-paper py-12 px-6">
+      <div className="max-w-3xl mx-auto animate-fade-up">
+        {/* Brand */}
+        <div className="text-center mb-10">
+          <span
+            className="font-display text-4xl text-ink"
+            style={{ fontVariationSettings: '"opsz" 144, "wght" 500, "SOFT" 30' }}
+          >
+            Snappy
+          </span>
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-oxblood mb-1 ml-1.5" />
+          <div className="eyebrow text-ink-faint mt-2">Establish your chambers</div>
         </div>
 
-        {/* Progress Steps */}
-        <div className="mb-8">
-          <div className="flex items-center">
-            {/* Step 1 */}
-            <div className="flex items-center flex-1">
-              <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-colors ${step >= 1 ? 'bg-indigo-600 text-white' : 'bg-gray-300 text-gray-600'
-                  }`}
-              >
-                1
+        {/* Step indicator */}
+        <div className="mb-10 flex items-center justify-center gap-4">
+          {[1, 2].map((n) => (
+            <div key={n} className="flex items-center gap-3">
+              <div className={[
+                'flex items-center justify-center font-display text-sm transition-all duration-300',
+                'w-9 h-9 rounded-full',
+                step > n ? 'bg-oxblood text-paper' :
+                step === n ? 'bg-ink text-paper' :
+                             'bg-paper-deep text-ink-muted border border-rule',
+              ].join(' ')} style={{ fontVariationSettings: '"opsz" 48, "wght" 500' }}>
+                {step > n ? <Check size={14} strokeWidth={2.5} /> : n}
               </div>
-              <div className="flex-1 mx-2">
-                <div className={`h-1 ${step > 1 ? 'bg-indigo-600' : 'bg-gray-300'}`} />
-              </div>
+              <span className={`text-sm font-medium ${step >= n ? 'text-ink' : 'text-ink-faint'}`}>
+                {n === 1 ? 'Firm details' : 'Banking & branding'}
+              </span>
+              {n === 1 && <div className="w-12 h-px bg-rule mx-1" />}
             </div>
-
-            {/* Step 2 */}
-            <div className="flex items-center">
-              <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-colors ${step >= 2 ? 'bg-indigo-600 text-white' : 'bg-gray-300 text-gray-600'
-                  }`}
-              >
-                2
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-between mt-2 px-1">
-            <span className="text-sm text-gray-600 text-left" style={{ width: '50%' }}>Basic Info</span>
-            <span className="text-sm text-gray-600 text-right" style={{ width: '50%' }}>Banking Details</span>
-          </div>
+          ))}
         </div>
 
-        {/* Form Card */}
-        <div className="bg-white rounded-lg shadow-xl p-8">
+        {/* Card */}
+        <div className="card p-10">
           {error && (
-            <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">
-              {error}
-            </div>
+            <div className="alert-error mb-6 animate-fade-in" role="alert">{error}</div>
           )}
 
           <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
-
-            {/* Step 1: Basic Information */}
             {step === 1 && (
-              <div className="space-y-4">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">Basic Information</h3>
+              <div className="space-y-5">
+                <div className="mb-2">
+                  <div className="page-eyebrow">Step I</div>
+                  <h2 className="section-title">Tell us about your firm</h2>
+                </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Firm Name *
-                  </label>
+                  <label className="field-label">Firm name *</label>
                   <input
                     type="text"
                     name="firm_name"
                     required
                     value={formData.firm_name}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    placeholder="Your Law Firm Name"
+                    className="field-input"
+                    placeholder="e.g., Sharma &amp; Associates"
+                    autoFocus
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Firm Address *
-                  </label>
+                  <label className="field-label">Firm address *</label>
                   <textarea
                     name="firm_address"
                     required
                     value={formData.firm_address}
                     onChange={handleChange}
                     rows={3}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    placeholder="Street Address, City, State, PIN Code"
+                    className="field-textarea"
+                    placeholder="Street address, City, State, PIN code"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email Address
-                  </label>
+                  <label className="field-label">Email</label>
                   <input
                     type="email"
                     name="firm_email"
                     value={formData.firm_email}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    placeholder="contact@yourfirm.com"
+                    className="field-input"
+                    placeholder="contact@yourfirm.in"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Phone Number
-                    </label>
+                    <label className="field-label">Phone</label>
                     <input
                       type="tel"
                       name="firm_phone"
                       value={formData.firm_phone}
                       onChange={handleChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      className="field-input font-mono"
                       placeholder="+91-XXXXXXXXXX"
                     />
                   </div>
-
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Phone Number 2
-                    </label>
+                    <label className="field-label">Alternate phone</label>
                     <input
                       type="tel"
                       name="firm_phone_2"
                       value={formData.firm_phone_2}
                       onChange={handleChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      className="field-input font-mono"
                       placeholder="+91-XXXXXXXXXX"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Website
-                  </label>
+                  <label className="field-label">Website</label>
                   <input
                     type="url"
                     name="firm_website"
                     value={formData.firm_website}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    placeholder="https://www.yourfirm.com"
+                    className="field-input"
+                    placeholder="https://www.yourfirm.in"
                   />
                 </div>
               </div>
             )}
 
-            {/* Step 2: Banking Details */}
             {step === 2 && (
-              <div className="space-y-4">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">Banking Details</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Add your banking information to include payment details on invoices. You can skip this and update later in Settings.
-                </p>
+              <div className="space-y-5">
+                <div className="mb-2">
+                  <div className="page-eyebrow">Step II</div>
+                  <h2 className="section-title">Banking &amp; branding</h2>
+                  <p className="text-sm text-ink-muted mt-2">
+                    These appear on your invoices. You can skip and add them later in Settings.
+                  </p>
+                </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
+                  <label className="field-label">Bank name</label>
                   <input
-                    type="text"
-                    name="bank_name"
-                    value={formData.bank_name}
+                    type="text" name="bank_name" value={formData.bank_name}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="field-input"
                     placeholder="State Bank of India"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Account Holder Name
-                  </label>
+                  <label className="field-label">Account holder name</label>
                   <input
-                    type="text"
-                    name="account_holder_name"
-                    value={formData.account_holder_name}
+                    type="text" name="account_holder_name" value={formData.account_holder_name}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    placeholder="Account holder name"
+                    className="field-input"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Account Number
-                    </label>
+                    <label className="field-label">Account number</label>
                     <input
-                      type="text"
-                      name="account_number"
-                      value={formData.account_number}
+                      type="text" name="account_number" value={formData.account_number}
                       onChange={handleChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      placeholder="1234567890"
+                      className="field-input font-mono"
                     />
                   </div>
-
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">IFSC Code</label>
+                    <label className="field-label">IFSC code</label>
                     <input
-                      type="text"
-                      name="ifsc_code"
-                      value={formData.ifsc_code}
+                      type="text" name="ifsc_code" value={formData.ifsc_code}
                       onChange={handleChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      className="field-input font-mono"
                       placeholder="SBIN0001234"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">UPI ID</label>
+                  <label className="field-label">UPI ID</label>
                   <input
-                    type="text"
-                    name="upi_id"
-                    value={formData.upi_id}
+                    type="text" name="upi_id" value={formData.upi_id}
                     onChange={handleChange}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="field-input font-mono"
                     placeholder="yourfirm@oksbi"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Billing Terms & Conditions
-                  </label>
+                  <label className="field-label">Billing terms &amp; conditions</label>
                   <textarea
-                    name="billing_terms"
-                    value={formData.billing_terms}
+                    name="billing_terms" value={formData.billing_terms}
                     onChange={handleChange}
                     rows={4}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    placeholder="Payment terms..."
+                    className="field-textarea"
                   />
                 </div>
 
-                {/* Image Uploads Section */}
-                <div className="pt-6 border-t border-gray-200">
-                  <h4 className="text-lg font-medium text-gray-900 mb-4">Branding & Assets</h4>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Upload your firm logo, signature, and UPI QR code for invoices. You can skip this and add them later in Settings.
+                {/* Branding */}
+                <div className="pt-6 border-t border-rule">
+                  <div className="eyebrow mb-1">Branding</div>
+                  <h3 className="section-title !text-xl">Logo, signature, UPI QR</h3>
+                  <p className="text-sm text-ink-muted mt-2 mb-5">
+                    Optional. These appear on the printed invoice.
                   </p>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <ImageUpload
-                      type="logo"
-                      label="Firm Logo"
-                      description="Your company logo for invoices"
-                    />
-
-                    <ImageUpload
-                      type="signature"
-                      label="Signature"
-                      description="Your signature for invoices"
-                    />
-
-                    <ImageUpload
-                      type="qr"
-                      label="UPI QR Code"
-                      description="Payment QR code for invoices"
-                    />
+                    <ImageUpload type="logo" label="Firm Logo" description="Top of invoice header" />
+                    <ImageUpload type="signature" label="Signature" description="Above the signature line" />
+                    <ImageUpload type="qr" label="UPI QR Code" description="In the payment section" />
                   </div>
                 </div>
 
-                {/* Confirmation Checkbox */}
-                <div className="pt-6 border-t border-gray-200">
-                  <label className="flex items-center gap-3 cursor-pointer">
+                {/* Confirmation */}
+                <div className="pt-6 border-t border-rule">
+                  <label className="flex items-start gap-3 cursor-pointer">
                     <input
                       type="checkbox"
                       name="confirmSetup"
                       checked={formData.confirmSetup}
-                      onChange={(e) => setFormData(prev => ({ ...prev, confirmSetup: e.target.checked }))}
-                      className="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                      onChange={(e) => setFormData((p) => ({ ...p, confirmSetup: e.target.checked }))}
+                      className="w-4 h-4 mt-0.5 accent-oxblood"
                       required
                     />
-                    <span className="text-sm text-gray-700">
-                      I confirm that the above information is correct and I'm ready to complete setup <span className="text-red-500">*</span>
+                    <span className="text-sm text-ink-soft">
+                      I confirm the information above is correct and I'm ready to start invoicing.
+                      <span className="text-oxblood ml-1">*</span>
                     </span>
                   </label>
                 </div>
               </div>
             )}
 
-            {/* Navigation Buttons */}
-            <div className="flex justify-between mt-8 pt-6 border-t border-gray-200">
+            {/* Navigation */}
+            <div className="flex justify-between items-center mt-10 pt-6 border-t border-rule">
               <button
                 type="button"
                 onClick={prevStep}
                 disabled={step === 1}
-                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="btn-ghost disabled:!opacity-30"
               >
-                Previous
+                <ArrowLeft size={14} strokeWidth={2} />
+                <span>Previous</span>
               </button>
 
               {step < 2 ? (
-                <button
-                  type="button"
-                  onClick={nextStep}
-                  className="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-                >
-                  Next
+                <button type="button" onClick={nextStep} className="btn-primary">
+                  <span>Continue</span>
+                  <ArrowRight size={14} strokeWidth={2} />
                 </button>
               ) : (
                 <button
                   type="submit"
-                  disabled={isLoading}
-                  className="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  disabled={isLoading || !formData.confirmSetup}
+                  className="btn-primary"
                 >
-                  {isLoading ? 'Completing...' : 'Complete Setup'}
+                  {isLoading ? (
+                    <>
+                      <span className="spinner !w-4 !h-4 !border-paper/40 !border-t-paper" />
+                      <span>Completing…</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Complete setup</span>
+                      <Check size={14} strokeWidth={2} />
+                    </>
+                  )}
                 </button>
               )}
             </div>

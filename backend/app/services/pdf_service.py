@@ -344,13 +344,16 @@ INVOICE_TEMPLATE = """
 """
 
 
-def generate_pdf(invoice):
+def generate_pdf(invoice, firm=None):
     """
-    Generate PDF invoice from invoice model using ReportLab
-    
+    Generate PDF invoice from invoice model using ReportLab.
+
     Args:
         invoice: Invoice model instance with related client and items
-        
+        firm:    FirmDetails for the invoice's user. Optional so existing
+                 single-arg callers still work; without it the signature
+                 image is skipped.
+
     Returns:
         bytes: PDF file content
     """
@@ -457,12 +460,13 @@ def generate_pdf(invoice):
     elements.append(Paragraph(f"<b>Amount in Words:</b> {total_words} Rupees Only", normal_style))
     elements.append(Spacer(1, 0.3*inch))
     
-    # Signature
-    if invoice.signature_path and os.path.exists(invoice.signature_path):
+    # Signature — sourced from the firm's profile (default for all invoices).
+    sig_path = firm.signature_path if firm else None
+    if sig_path and os.path.exists(sig_path):
         try:
-            sig_img = Image(invoice.signature_path, width=2*inch, height=1*inch)
+            sig_img = Image(sig_path, width=2*inch, height=1*inch)
             elements.append(sig_img)
-        except:
+        except Exception:
             pass
     
     elements.append(Spacer(1, 0.2*inch))

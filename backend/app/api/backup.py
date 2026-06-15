@@ -7,8 +7,32 @@ from app.services.backup_job import (
     download_backup,
     delete_old_backups
 )
+from app.services.export_service import export_full_user_data
 
 bp = Blueprint('backup', __name__)
+
+
+@bp.route('/backup/export', methods=['GET'])
+@jwt_required
+def export_user_data():
+    """
+    Download a complete archive of the current user's data.
+
+    Returns a ZIP containing data.json (all relational tables for this
+    user) plus their storage files (logo, signature, UPI QR).
+    """
+    zip_bytes, filename = export_full_user_data(g.user_id, g.user_email)
+    if zip_bytes is None:
+        return jsonify({'error': 'User profile not found'}), 404
+
+    return Response(
+        zip_bytes,
+        mimetype='application/zip',
+        headers={
+            'Content-Disposition': f'attachment; filename={filename}',
+            'Content-Length': str(len(zip_bytes)),
+        },
+    )
 
 
 @bp.route('/backup', methods=['POST'])

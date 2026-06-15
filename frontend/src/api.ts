@@ -87,7 +87,6 @@ export interface Invoice {
   status: 'draft' | 'sent' | 'paid' | 'void';
   paid_date?: string;
   notes?: string;
-  signature_path?: string;
   items?: InvoiceItem[];
   created_at?: string;
   updated_at?: string;
@@ -358,4 +357,36 @@ export const api = {
     fetchAPI<{ message: string }>(`${API_BASE_URL}/storage/delete/${fileType}`, {
       method: 'DELETE',
     }),
+
+  // Data export — downloads a ZIP of all the user's data + storage files
+  exportData: async (): Promise<void> => {
+    const { supabase } = await import('./lib/supabase');
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+
+    const response = await fetch(`${API_BASE_URL}/backup/export`, {
+      method: 'GET',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(error.error || `Export failed: ${response.statusText}`);
+    }
+
+    const blob = await response.blob();
+
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename=([^;]+)/i);
+    const filename = match ? match[1].trim().replace(/^"|"$/g, '') : 'snappy_export.zip';
+
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };

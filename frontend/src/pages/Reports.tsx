@@ -1,14 +1,24 @@
+import { BarChart3 } from 'lucide-react';
+
 export default function Reports() {
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Reports</h1>
-        <p className="text-gray-600 mt-1">Advanced analytics and reporting</p>
-      </div>
-      
-      <div className="bg-white rounded-lg shadow p-12 text-center text-gray-500">
-        <p className="text-lg">Coming soon: Advanced reporting features</p>
-        <p className="mt-2">View the Dashboard for current analytics</p>
+    <div className="max-w-page mx-auto px-8 lg:px-12 py-10">
+      <header className="mb-12">
+        <div className="page-eyebrow">Folio V · Reports</div>
+        <h1 className="page-title">Reports &amp; analytics</h1>
+        <p className="page-subtitle">
+          Detailed financial and practice reports.
+        </p>
+      </header>
+
+      <div className="card p-16 text-center">
+        <BarChart3 size={32} strokeWidth={1.25} className="mx-auto text-ink-faint mb-6" />
+        <div className="eyebrow text-oxblood">In preparation</div>
+        <h2 className="section-title mt-2">A fuller set of reports is being typeset</h2>
+        <p className="text-base text-ink-muted mt-3 max-w-prose mx-auto">
+          For now, the Dashboard carries the principal figures for your practice —
+          trailing revenue, top clients, and outstanding receivables.
+        </p>
       </div>
     </div>
   );

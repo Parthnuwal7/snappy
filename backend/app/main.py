@@ -2,13 +2,13 @@
 SNAPPY Backend - Flask Application
 Main application factory and configuration
 """
-from flask import Flask
+from flask import Flask, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 from datetime import timedelta
 import os
 
-from app.models.models import db, init_db
+from app.models.models import db, init_db, Keepalive
 from app.api import invoices, clients, analytics, import_csv, backup, auth, admin, items, storage
 
 # Load environment variables
@@ -18,9 +18,16 @@ load_dotenv()
 def create_app():
     """Application factory pattern"""
     app = Flask(__name__)
-    
-    # Configuration
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///snappy.db')
+
+    # Configuration. Force DATABASE_URL to be set so the app never silently
+    # falls back to a local SQLite file when prod env vars are misconfigured.
+    database_url = os.getenv('DATABASE_URL')
+    if not database_url:
+        raise RuntimeError(
+            "DATABASE_URL is not set. Configure it in your environment "
+            "(see backend/.env.example) before starting the backend."
+        )
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-prod')
     app.config['INVOICE_PREFIX'] = os.getenv('INVOICE_PREFIX', 'LAW')
@@ -66,8 +73,37 @@ def create_app():
     
     @app.route('/health')
     def health():
-        """Health check endpoint"""
+        """Read-only liveness check. Cheap, no side effects, no DB writes."""
         return {'status': 'healthy', 'app': 'SNAPPY', 'version': '1.0.0'}, 200
+
+    @app.route('/keepalive', methods=['GET', 'POST'])
+    def keepalive():
+        """Heartbeat endpoint pinged by Cloud Scheduler every 3 days.
+
+        Performs both DB and Supabase-gateway activity so the project never
+        crosses the 7-day idle threshold that triggers free-tier auto-pause.
+        Side effects:
+          * INSERTs a row into the `keepalive` table (DB activity).
+          * Calls Supabase Storage list_buckets (Supabase API gateway activity).
+        """
+        source = (request.args.get('source') or 'unknown')[:50]
+        row = Keepalive(source=source)
+        db.session.add(row)
+        db.session.commit()
+
+        storage_check = 'ok'
+        try:
+            from app.services.supabase_client import get_supabase_client
+            get_supabase_client().storage.list_buckets()
+        except Exception as e:
+            storage_check = f'error: {e}'
+
+        return {
+            'status': 'ok',
+            'pinged_at': row.pinged_at.isoformat(),
+            'source': source,
+            'storage_check': storage_check,
+        }, 200
     
     @app.route('/api/v1')
     def api_root():
@@ -78,6 +114,7 @@ def create_app():
             'company': 'Parth Nuwal',
             'endpoints': {
                 'health': '/health',
+                'keepalive': '/keepalive',
                 'auth': '/api/v1/auth',
                 'clients': '/api/v1/clients',
                 'invoices': '/api/v1/invoices',

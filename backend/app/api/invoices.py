@@ -191,7 +191,6 @@ def create_invoice():
             tax_rate=tax_rate,
             status=data.get('status', 'draft'),
             notes=data.get('notes'),
-            signature_path=data.get('signature_path')
         )
         
         # Add line items
@@ -252,9 +251,7 @@ def update_invoice(invoice_id):
         invoice.status = data['status']
     if 'notes' in data:
         invoice.notes = data['notes']
-    if 'signature_path' in data:
-        invoice.signature_path = data['signature_path']
-    
+
     # Update items if provided
     if 'items' in data:
         # Remove old items

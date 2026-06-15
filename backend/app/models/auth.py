@@ -1,5 +1,6 @@
 """Authentication models - User, FirmDetails, BankAccount"""
-from app.models.models import db
+from app.models.models import db, _money
+from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
 import json
 
@@ -7,9 +8,11 @@ import json
 class User(db.Model):
     """User account linked to Supabase Auth"""
     __tablename__ = 'users'
-    
+
     id = db.Column(db.Integer, primary_key=True)
-    supabase_id = db.Column(db.String(100), unique=True)  # UUID from Supabase Auth
+    # Postgres column is uuid; as_uuid=False keeps Python-side values as plain strings
+    # so JSON serialization, JWT sub comparisons, and frontend payloads all line up.
+    supabase_id = db.Column(UUID(as_uuid=False), unique=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256))
     is_active = db.Column(db.Boolean, default=True)
@@ -79,7 +82,7 @@ class FirmDetails(db.Model):
     default_template = db.Column(db.String(50), default='Simple')
     invoice_prefix = db.Column(db.String(20), default='INV')
     use_invoice_prefix = db.Column(db.Boolean, default=True)  # True = PREFIX/SEQ, False = SEQ only
-    default_tax_rate = db.Column(db.Float, default=18.0)
+    default_tax_rate = db.Column(db.Numeric(5, 2), default=18.0)
     currency = db.Column(db.String(10), default='INR')
     show_due_date = db.Column(db.Boolean, default=True)
     
@@ -106,7 +109,7 @@ class FirmDetails(db.Model):
             'default_template': self.default_template,
             'invoice_prefix': self.invoice_prefix,
             'use_invoice_prefix': self.use_invoice_prefix if self.use_invoice_prefix is not None else True,
-            'default_tax_rate': self.default_tax_rate,
+            'default_tax_rate': _money(self.default_tax_rate),
             'currency': self.currency,
             'show_due_date': self.show_due_date,
             'created_at': self.created_at.isoformat() if self.created_at else None,

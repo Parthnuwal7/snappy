@@ -5,6 +5,7 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { api, Client, InvoiceItem, Item } from '../api';
 import ItemAutocomplete from '../components/ItemAutocomplete';
 import { useAuth } from '../contexts/AuthContext';
+import { ArrowLeft, Plus, Trash2, RotateCcw, Search } from 'lucide-react';
 
 interface InvoiceForm {
   client_id: number;
@@ -16,6 +17,9 @@ interface InvoiceForm {
   notes?: string;
 }
 
+const formatINR = (value: number) =>
+  '₹' + value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 export default function NewInvoice() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -26,15 +30,11 @@ export default function NewInvoice() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [originalInvoice, setOriginalInvoice] = useState<any>(null);
 
-  // Debounce client search - wait 300ms after typing stops
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(clientSearch);
-    }, 300);
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => setDebouncedSearch(clientSearch), 300);
+    return () => clearTimeout(t);
   }, [clientSearch]);
 
-  // Get default tax rate from firm settings
   const defaultTaxRate = firm?.default_tax_rate ?? 18;
   const showDueDate = firm?.show_due_date ?? true;
 
@@ -48,19 +48,14 @@ export default function NewInvoice() {
     },
   });
 
-  const { fields, append, remove } = useFieldArray({
-    control,
-    name: 'items',
-  });
+  const { fields, append, remove } = useFieldArray({ control, name: 'items' });
 
-  // Load invoice if editing
   const { data: invoice } = useQuery({
     queryKey: ['invoice', id],
     queryFn: () => api.getInvoice(Number(id)),
     enabled: !!id,
   });
 
-  // Populate form when editing
   useEffect(() => {
     if (invoice) {
       const formData = {
@@ -74,22 +69,16 @@ export default function NewInvoice() {
       };
       reset(formData);
       setOriginalInvoice(formData);
-
-      // Load client info
-      api.getClient(invoice.client_id).then((client) => {
-        setSelectedClient(client);
-      });
+      api.getClient(invoice.client_id).then(setSelectedClient);
     }
   }, [invoice, reset]);
 
-  // Client search - uses debounced value with 3-char minimum
   const { data: clients, isLoading: clientsLoading } = useQuery({
     queryKey: ['clients', debouncedSearch],
     queryFn: () => api.getClients(debouncedSearch),
     enabled: debouncedSearch.length >= 3,
   });
 
-  // Create/Update mutations
   const createMutation = useMutation({
     mutationFn: api.createInvoice,
     onSuccess: () => {
@@ -97,7 +86,6 @@ export default function NewInvoice() {
       navigate('/invoices');
     },
   });
-
   const updateMutation = useMutation({
     mutationFn: (data: any) => api.updateInvoice(Number(id), data),
     onSuccess: () => {
@@ -106,225 +94,233 @@ export default function NewInvoice() {
     },
   });
 
-  // Watch items for auto-calculation
   const items = watch('items');
   const taxRate = watch('tax_rate');
-
-  // Calculate totals
-  const subtotal = items.reduce((sum, item) => sum + (item.amount || 0), 0);
+  const subtotal = items.reduce((sum, i) => sum + (i.amount || 0), 0);
   const taxAmount = subtotal * (taxRate / 100);
   const total = subtotal + taxAmount;
 
-  // Update item amount when quantity or rate changes
   const updateItemAmount = (index: number) => {
     const item = items[index];
-    const amount = (item.quantity || 0) * (item.rate || 0);
-    setValue(`items.${index}.amount`, amount);
+    setValue(`items.${index}.amount`, (item.quantity || 0) * (item.rate || 0));
   };
 
   const onSubmit = (data: InvoiceForm) => {
-    if (id) {
-      updateMutation.mutate(data);
-    } else {
-      createMutation.mutate(data);
-    }
+    if (id) updateMutation.mutate(data);
+    else createMutation.mutate(data);
   };
 
-  const formatCurrency = (value: number) => `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">{id ? 'Edit Invoice' : 'New Invoice'}</h1>
-        <p className="text-gray-600 mt-1">Create or update invoice details</p>
+    <div className="max-w-page mx-auto px-8 lg:px-12 py-10">
+      {/* Header */}
+      <div className="mb-10">
+        <button
+          onClick={() => navigate('/invoices')}
+          className="inline-flex items-center gap-1.5 text-sm text-ink-muted hover:text-oxblood transition-colors mb-3"
+        >
+          <ArrowLeft size={14} strokeWidth={2} />
+          <span>Back to invoices</span>
+        </button>
+        <div className="page-eyebrow">{id ? 'Amendment' : 'New entry'}</div>
+        <h1 className="page-title">{id ? 'Edit invoice' : 'Compose invoice'}</h1>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* Client Selection */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold mb-4">Client Information</h2>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Search Client *
-            </label>
-            <input
-              type="text"
-              value={clientSearch}
-              onChange={(e) => setClientSearch(e.target.value)}
-              placeholder="Type at least 3 characters..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            />
-
-            {/* Loading indicator */}
-            {clientsLoading && clientSearch.length >= 3 && (
-              <div className="mt-2 text-sm text-gray-500">Searching...</div>
-            )}
-
-            {/* Hint for minimum characters */}
-            {clientSearch.length > 0 && clientSearch.length < 3 && (
-              <div className="mt-2 text-sm text-gray-500">Type {3 - clientSearch.length} more character{3 - clientSearch.length > 1 ? 's' : ''}...</div>
-            )}
-
-            {clients && clients.length > 0 && (
-              <div className="mt-2 border border-gray-200 rounded-lg max-h-60 overflow-y-auto">
-                {clients.map((client) => (
-                  <button
-                    key={client.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedClient(client);
-                      setValue('client_id', client.id);
-                      setValue('tax_rate', client.default_tax_rate);
-                      setClientSearch('');
-                    }}
-                    className="w-full text-left px-4 py-3 hover:bg-primary-50 border-b last:border-b-0"
-                  >
-                    <div className="font-medium">{client.name}</div>
-                    {client.address && <div className="text-sm text-gray-600">{client.address}</div>}
-                    {client.email && <div className="text-xs text-gray-500">{client.email}</div>}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {selectedClient && (
-              <div className="mt-4 p-4 bg-primary-50 rounded-lg">
-                <div className="font-medium text-primary-900">{selectedClient.name}</div>
-                {selectedClient.address && <div className="text-sm text-primary-700">{selectedClient.address}</div>}
-                {selectedClient.email && <div className="text-sm text-primary-700">{selectedClient.email}</div>}
-                {selectedClient.phone && <div className="text-sm text-primary-700">{selectedClient.phone}</div>}
-              </div>
-            )}
+        {/* Client */}
+        <section className="card p-8">
+          <div className="mb-5">
+            <div className="page-eyebrow">Part I</div>
+            <h2 className="section-title mt-1">Bill to</h2>
           </div>
-        </div>
 
-        {/* Invoice Details */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold mb-4">Invoice Details</h2>
+          {selectedClient ? (
+            <div className="bg-paper-deep border border-rule rounded-DEFAULT p-5 flex items-start justify-between gap-4">
+              <div>
+                <div className="font-display text-xl text-ink"
+                     style={{ fontVariationSettings: '"opsz" 48, "wght" 500' }}>
+                  {selectedClient.name}
+                </div>
+                {selectedClient.address && (
+                  <div className="text-sm text-ink-soft mt-1 whitespace-pre-line">
+                    {selectedClient.address}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-4 mt-3 text-xs text-ink-muted">
+                  {selectedClient.email && <span>{selectedClient.email}</span>}
+                  {selectedClient.phone && <span className="font-mono">{selectedClient.phone}</span>}
+                  {selectedClient.tax_id && <span className="font-mono">GSTIN: {selectedClient.tax_id}</span>}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setSelectedClient(null); setValue('client_id', 0); }}
+                className="text-xs uppercase tracking-eyebrow text-ink-muted hover:text-oxblood transition-colors"
+              >
+                Change
+              </button>
+            </div>
+          ) : (
+            <div>
+              <label className="field-label">Search client (min 3 characters) *</label>
+              <div className="relative">
+                <Search size={14} strokeWidth={1.5}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
+                <input
+                  type="text"
+                  value={clientSearch}
+                  onChange={(e) => setClientSearch(e.target.value)}
+                  placeholder="Start typing the client's name…"
+                  className="field-input pl-9"
+                  autoFocus
+                />
+              </div>
+
+              {clientsLoading && clientSearch.length >= 3 && (
+                <div className="mt-2 text-xs text-ink-muted">Searching catalog…</div>
+              )}
+              {clientSearch.length > 0 && clientSearch.length < 3 && (
+                <div className="mt-2 text-xs text-ink-muted">
+                  Type {3 - clientSearch.length} more character{3 - clientSearch.length > 1 ? 's' : ''}…
+                </div>
+              )}
+
+              {clients && clients.length > 0 && (
+                <div className="mt-3 border border-rule rounded-DEFAULT max-h-60 overflow-y-auto bg-surface">
+                  {clients.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedClient(c);
+                        setValue('client_id', c.id);
+                        setValue('tax_rate', c.default_tax_rate);
+                        setClientSearch('');
+                      }}
+                      className="w-full text-left px-4 py-3 hover:bg-paper-deep border-b border-rule-soft last:border-b-0 transition-colors"
+                    >
+                      <div className="font-medium text-ink text-sm">{c.name}</div>
+                      {c.address && <div className="text-xs text-ink-muted mt-0.5">{c.address}</div>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* Details */}
+        <section className="card p-8">
+          <div className="mb-5">
+            <div className="page-eyebrow">Part II</div>
+            <h2 className="section-title mt-1">Invoice details</h2>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Invoice Date *
-              </label>
+              <label className="field-label">Invoice date *</label>
               <input
                 type="date"
                 {...register('invoice_date', { required: true })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                className="field-input font-mono"
               />
             </div>
-
             {showDueDate && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Due Date
-                </label>
+                <label className="field-label">Due date</label>
                 <input
                   type="date"
                   {...register('due_date')}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                  className="field-input font-mono"
                 />
               </div>
             )}
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Tax Rate (%)
-              </label>
+              <label className="field-label">Tax rate (%)</label>
               <input
                 type="number"
                 step="0.01"
                 {...register('tax_rate', { required: true, min: 0, max: 100 })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                className="field-input font-mono tabular"
               />
             </div>
           </div>
 
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Short Description (max 120 chars)
-            </label>
+            <label className="field-label">Short description (max 120)</label>
             <input
               type="text"
               maxLength={120}
               {...register('short_desc')}
-              placeholder="Brief description of services..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+              placeholder="Brief description of services…"
+              className="field-input"
             />
-            <div className="text-xs text-gray-500 mt-1">
-              {watch('short_desc')?.length || 0}/120 characters
+            <div className="flex justify-end mt-1.5 text-2xs uppercase tracking-eyebrow text-ink-muted">
+              <span className="font-mono">{watch('short_desc')?.length || 0} / 120</span>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Line Items */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold mb-4">Line Items</h2>
-
-          {/* Table Header */}
-          <div className="flex gap-4 items-center border-b pb-3 mb-4 bg-gray-50 -mx-6 px-6 py-2">
-            <div className="flex-1 text-sm font-medium text-gray-700">Description</div>
-            <div className="w-24 text-sm font-medium text-gray-700 text-center">Qty</div>
-            <div className="w-32 text-sm font-medium text-gray-700 text-center">Rate</div>
-            <div className="w-32 text-sm font-medium text-gray-700 text-right">Amount</div>
-            <div className="w-8"></div>
+        {/* Line items */}
+        <section className="card p-8">
+          <div className="mb-5">
+            <div className="page-eyebrow">Part III</div>
+            <h2 className="section-title mt-1">Line items</h2>
           </div>
 
-          <div className="space-y-4">
+          {/* Table header */}
+          <div className="grid grid-cols-[1fr_5rem_8rem_8rem_2rem] gap-4 pb-3 border-b border-rule-strong">
+            <div className="eyebrow">Description</div>
+            <div className="eyebrow text-center">Qty</div>
+            <div className="eyebrow text-right">Rate</div>
+            <div className="eyebrow text-right">Amount</div>
+            <div></div>
+          </div>
+
+          <div className="divide-y divide-rule-soft">
             {fields.map((field, index) => (
-              <div key={field.id} className="flex gap-4 items-start border-b pb-4">
-                <div className="flex-1">
+              <div key={field.id} className="grid grid-cols-[1fr_5rem_8rem_8rem_2rem] gap-4 py-4 items-start">
+                <div>
                   <ItemAutocomplete
                     value={items[index]?.description || ''}
                     onChange={(value) => setValue(`items.${index}.description`, value, { shouldValidate: true })}
                     onSelectItem={(item: Item) => {
                       setValue(`items.${index}.description`, item.description || item.name, { shouldValidate: true });
                       setValue(`items.${index}.rate`, item.default_rate, { shouldValidate: true });
-                      // Calculate amount directly using the new rate
                       const quantity = items[index]?.quantity || 1;
-                      const amount = quantity * item.default_rate;
-                      setValue(`items.${index}.amount`, amount, { shouldValidate: true });
+                      setValue(`items.${index}.amount`, quantity * item.default_rate, { shouldValidate: true });
                     }}
-                    placeholder="Search item or type description..."
+                    placeholder="Search or type description…"
                   />
                 </div>
-                <div className="w-24">
-                  <input
-                    type="number"
-                    step="0.01"
-                    {...register(`items.${index}.quantity`, {
-                      required: true,
-                      min: 0,
-                      onChange: () => updateItemAmount(index)
-                    })}
-                    placeholder="Qty"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-center"
-                  />
-                </div>
-                <div className="w-32">
-                  <input
-                    type="number"
-                    step="0.01"
-                    {...register(`items.${index}.rate`, {
-                      required: true,
-                      min: 0,
-                      onChange: () => updateItemAmount(index)
-                    })}
-                    placeholder="Rate"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-right"
-                  />
-                </div>
-                <div className="w-32 flex items-center justify-end">
-                  <span className="font-medium">{formatCurrency(items[index]?.amount || 0)}</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  {...register(`items.${index}.quantity`, {
+                    required: true, min: 0,
+                    onChange: () => updateItemAmount(index),
+                  })}
+                  className="field-input text-center font-mono tabular"
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  {...register(`items.${index}.rate`, {
+                    required: true, min: 0,
+                    onChange: () => updateItemAmount(index),
+                  })}
+                  className="field-input text-right font-mono tabular"
+                />
+                <div className="flex items-center justify-end h-[38px] font-mono text-sm text-ink tabular">
+                  {formatINR(items[index]?.amount || 0)}
                 </div>
                 <button
                   type="button"
                   onClick={() => remove(index)}
                   disabled={fields.length === 1}
-                  className="text-red-600 hover:text-red-800 disabled:opacity-50 w-8"
+                  className="self-center text-ink-muted hover:text-oxblood disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  title="Remove line"
                 >
-                  ✕
+                  <Trash2 size={14} strokeWidth={1.5} />
                 </button>
               </div>
             ))}
@@ -333,67 +329,67 @@ export default function NewInvoice() {
           <button
             type="button"
             onClick={() => append({ description: '', quantity: 1, rate: 0, amount: 0 })}
-            className="mt-4 px-4 py-2 text-primary-600 border border-primary-600 rounded-lg hover:bg-primary-50"
+            className="btn-secondary mt-5"
           >
-            + Add Item
+            <Plus size={14} strokeWidth={2} />
+            <span>Add line</span>
           </button>
-        </div>
+        </section>
 
         {/* Totals */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="max-w-md ml-auto space-y-2">
-            <div className="flex justify-between text-lg">
-              <span>Subtotal:</span>
-              <span className="font-medium">{formatCurrency(subtotal)}</span>
+        <section className="card p-8">
+          <div className="max-w-md ml-auto space-y-3">
+            <div className="flex justify-between text-sm">
+              <span className="text-ink-muted">Subtotal</span>
+              <span className="font-mono text-ink tabular">{formatINR(subtotal)}</span>
             </div>
-            <div className="flex justify-between text-lg">
-              <span>Tax ({taxRate}%):</span>
-              <span className="font-medium">{formatCurrency(taxAmount)}</span>
+            <div className="flex justify-between text-sm">
+              <span className="text-ink-muted">Tax ({taxRate}%)</span>
+              <span className="font-mono text-ink tabular">{formatINR(taxAmount)}</span>
             </div>
-            <div className="flex justify-between text-2xl font-bold border-t pt-2">
-              <span>Total:</span>
-              <span className="text-primary-600">{formatCurrency(total)}</span>
+            <div className="hairline" />
+            <div className="flex justify-between items-baseline pt-1">
+              <span className="eyebrow">Grand total</span>
+              <span
+                className="font-display text-3xl text-ink tabular"
+                style={{ fontVariationSettings: '"opsz" 144, "wght" 500, "SOFT" 30' }}
+              >
+                {formatINR(total)}
+              </span>
             </div>
           </div>
-        </div>
+        </section>
 
         {/* Notes */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Notes
-          </label>
+        <section className="card p-8">
+          <label className="field-label">Notes (printed on invoice)</label>
           <textarea
             {...register('notes')}
             rows={3}
-            placeholder="Additional notes or payment terms..."
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+            placeholder="Additional notes or payment terms…"
+            className="field-textarea"
           />
-        </div>
+        </section>
 
         {/* Actions */}
-        <div className="flex gap-4 justify-end">
-          <button
-            type="button"
-            onClick={() => navigate('/invoices')}
-            className="px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
+        <div className="flex gap-3 justify-end">
+          <button type="button" onClick={() => navigate('/invoices')} className="btn-ghost">
             Cancel
           </button>
           {id && originalInvoice && (
-            <button
-              type="button"
-              onClick={() => reset(originalInvoice)}
-              className="px-6 py-3 border border-primary-600 text-primary-600 rounded-lg hover:bg-primary-50"
-            >
-              Reset to Saved
+            <button type="button" onClick={() => reset(originalInvoice)} className="btn-secondary">
+              <RotateCcw size={14} strokeWidth={2} />
+              <span>Reset to saved</span>
             </button>
           )}
           <button
             type="submit"
             disabled={createMutation.isPending || updateMutation.isPending}
-            className="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+            className="btn-primary"
           >
-            {id ? 'Update Invoice' : 'Create Invoice'}
+            {createMutation.isPending || updateMutation.isPending
+              ? 'Saving…'
+              : (id ? 'Update invoice' : 'Create invoice')}
           </button>
         </div>
       </form>

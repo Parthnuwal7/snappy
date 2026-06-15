@@ -1,309 +1,314 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, Item } from '../api';
+import { Plus, X } from 'lucide-react';
 
 interface ItemAutocompleteProps {
-    value: string;
-    onChange: (value: string) => void;
-    onSelectItem: (item: Item) => void;
-    placeholder?: string;
-    className?: string;
+  value: string;
+  onChange: (value: string) => void;
+  onSelectItem: (item: Item) => void;
+  placeholder?: string;
+  className?: string;
 }
 
+const formatRate = (rate: number) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 0,
+  }).format(rate);
+
 export default function ItemAutocomplete({
-    value,
-    onChange,
-    onSelectItem,
-    placeholder = 'Search or type description...',
-    className = '',
+  value,
+  onChange,
+  onSelectItem,
+  placeholder = 'Search items or type description…',
+  className = '',
 }: ItemAutocompleteProps) {
-    const queryClient = useQueryClient();
-    const [isOpen, setIsOpen] = useState(false);
-    const [search, setSearch] = useState('');
-    const [showAddModal, setShowAddModal] = useState(false);
-    const [newItemForm, setNewItemForm] = useState({
-        name: '',
-        alias: '',
-        description: '',
-        default_rate: 0,
-        unit: 'hour',
-        hsn_code: '',
-    });
-    const inputRef = useRef<HTMLInputElement>(null);
-    const dropdownRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newItemForm, setNewItemForm] = useState({
+    name: '',
+    alias: '',
+    description: '',
+    default_rate: 0,
+    unit: 'hour',
+    hsn_code: '',
+  });
 
-    // Debounced search query
-    const { data: items } = useQuery({
-        queryKey: ['items-search', search],
-        queryFn: () => api.getItems(search, true),
-        enabled: search.length >= 2,
-        staleTime: 5000,
-    });
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Create item mutation
-    const createMutation = useMutation({
-        mutationFn: api.createItem,
-        onSuccess: (newItem) => {
-            console.log('Item created successfully:', newItem);
-            queryClient.invalidateQueries({ queryKey: ['items'] });
-            queryClient.invalidateQueries({ queryKey: ['items-search'] });
-            setShowAddModal(false);
-            // Auto-select the newly created item
-            onChange(newItem.description || newItem.name);
-            onSelectItem(newItem);
-            resetForm();
-        },
-        onError: (error) => {
-            console.error('Failed to create item:', error);
-            alert(`Failed to create item: ${error.message}`);
-        },
-    });
+  const { data: items } = useQuery({
+    queryKey: ['items-search', search],
+    queryFn: () => api.getItems(search, true),
+    enabled: search.length >= 2,
+    staleTime: 5000,
+  });
 
-    const resetForm = () => {
-        setNewItemForm({
-            name: '',
-            alias: '',
-            description: '',
-            default_rate: 0,
-            unit: 'hour',
-            hsn_code: '',
-        });
+  const createMutation = useMutation({
+    mutationFn: api.createItem,
+    onSuccess: (newItem) => {
+      queryClient.invalidateQueries({ queryKey: ['items'] });
+      queryClient.invalidateQueries({ queryKey: ['items-search'] });
+      setShowAddModal(false);
+      onChange(newItem.description || newItem.name);
+      onSelectItem(newItem);
+      resetForm();
+    },
+    onError: (error) => alert(`Failed to create item: ${error.message}`),
+  });
+
+  const resetForm = () => setNewItemForm({
+    name: '', alias: '', description: '',
+    default_rate: 0, unit: 'hour', hsn_code: '',
+  });
+
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+        inputRef.current && !inputRef.current.contains(e.target as Node)
+      ) setIsOpen(false);
     };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, []);
 
-    // Close dropdown when clicking outside
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (
-                dropdownRef.current &&
-                !dropdownRef.current.contains(event.target as Node) &&
-                inputRef.current &&
-                !inputRef.current.contains(event.target as Node)
-            ) {
-                setIsOpen(false);
-            }
-        };
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    onChange(v);
+    setSearch(v);
+    setIsOpen(v.length >= 2);
+  };
 
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
+  const handleSelectItem = (item: Item) => {
+    onChange(item.description || item.name);
+    onSelectItem(item);
+    setIsOpen(false);
+    setSearch('');
+  };
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newValue = e.target.value;
-        onChange(newValue);
-        setSearch(newValue);
-        setIsOpen(newValue.length >= 2);
-    };
+  const handleAddNewItem = () => {
+    setNewItemForm({ ...newItemForm, name: search, description: search });
+    setShowAddModal(true);
+    setIsOpen(false);
+  };
 
-    const handleSelectItem = (item: Item) => {
-        onChange(item.description || item.name);
-        onSelectItem(item);
-        setIsOpen(false);
-        setSearch('');
-    };
+  const handleCreateItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newItemForm.name.trim()) return;
+    createMutation.mutate(newItemForm);
+  };
 
-    const handleAddNewItem = () => {
-        // Pre-fill the form with what the user typed
-        setNewItemForm({
-            ...newItemForm,
-            name: search,
-            description: search,
-        });
-        setShowAddModal(true);
-        setIsOpen(false);
-    };
+  const hasNoResults = search.length >= 2 && (!items || items.length === 0);
 
-    const handleCreateItem = (e: React.FormEvent) => {
-        e.preventDefault();
-        console.log('handleCreateItem called with form data:', newItemForm);
-        if (!newItemForm.name.trim()) {
-            console.log('Item name is empty, returning');
-            return;
-        }
-        console.log('Calling createMutation.mutate...');
-        createMutation.mutate(newItemForm);
-    };
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={handleInputChange}
+        onFocus={() => search.length >= 2 && setIsOpen(true)}
+        placeholder={placeholder}
+        className={`field-input ${className}`}
+        autoComplete="off"
+      />
 
-    const formatRate = (rate: number) => {
-        return new Intl.NumberFormat('en-IN', {
-            style: 'currency',
-            currency: 'INR',
-            minimumFractionDigits: 0,
-        }).format(rate);
-    };
-
-    const hasNoResults = search.length >= 2 && (!items || items.length === 0);
-
-    return (
-        <div className="relative">
-            <input
-                ref={inputRef}
-                type="text"
-                value={value}
-                onChange={handleInputChange}
-                onFocus={() => search.length >= 2 && setIsOpen(true)}
-                placeholder={placeholder}
-                className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 ${className}`}
-                autoComplete="off"
-            />
-
-            {isOpen && (items?.length || hasNoResults) && (
-                <div
-                    ref={dropdownRef}
-                    className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-y-auto"
+      {isOpen && (items?.length || hasNoResults) && (
+        <div
+          ref={dropdownRef}
+          className="absolute z-50 left-0 right-0 mt-1 bg-surface border border-rule rounded-DEFAULT
+                     shadow-modal max-h-72 overflow-y-auto"
+        >
+          {items && items.length > 0 && (
+            <>
+              <div className="eyebrow px-4 py-2.5 bg-paper-deep border-b border-rule">
+                Catalog · {items.length} match{items.length === 1 ? '' : 'es'}
+              </div>
+              {items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleSelectItem(item)}
+                  className="w-full text-left px-4 py-3 hover:bg-paper-deep
+                             border-b border-rule-soft last:border-b-0 transition-colors"
                 >
-                    {items && items.length > 0 && (
-                        <>
-                            <div className="px-3 py-2 text-xs font-medium text-gray-500 bg-gray-50 border-b">
-                                Quick select from catalog
-                            </div>
-                            {items.map((item) => (
-                                <button
-                                    key={item.id}
-                                    type="button"
-                                    onClick={() => handleSelectItem(item)}
-                                    className="w-full text-left px-4 py-3 hover:bg-primary-50 border-b transition-colors"
-                                >
-                                    <div className="flex justify-between items-start">
-                                        <div className="flex-1">
-                                            <div className="font-medium text-gray-900">{item.name}</div>
-                                            {item.alias && (
-                                                <span className="text-xs text-primary-600 bg-primary-50 px-1.5 py-0.5 rounded">
-                                                    @{item.alias}
-                                                </span>
-                                            )}
-                                            {item.description && (
-                                                <div className="text-sm text-gray-500 mt-0.5 line-clamp-1">{item.description}</div>
-                                            )}
-                                        </div>
-                                        <div className="text-right ml-4">
-                                            <div className="font-semibold text-gray-900">{formatRate(item.default_rate)}</div>
-                                            <div className="text-xs text-gray-500">/{item.unit}</div>
-                                        </div>
-                                    </div>
-                                </button>
-                            ))}
-                        </>
-                    )}
-
-                    {/* Add New Item Option */}
-                    <button
-                        type="button"
-                        onClick={handleAddNewItem}
-                        className="w-full text-left px-4 py-3 hover:bg-green-50 border-t bg-gray-50 transition-colors"
-                    >
-                        <div className="flex items-center gap-2 text-green-700">
-                            <span className="text-lg">➕</span>
-                            <div>
-                                <div className="font-medium">Add "{search}" to catalog</div>
-                                <div className="text-xs text-gray-500">Save for future invoices</div>
-                            </div>
+                  <div className="flex justify-between items-start gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-ink text-sm">{item.name}</span>
+                        {item.alias && (
+                          <span className="text-2xs font-mono text-oxblood bg-oxblood-wash px-1.5 py-0.5 rounded-sm">
+                            @{item.alias}
+                          </span>
+                        )}
+                      </div>
+                      {item.description && (
+                        <div className="text-xs text-ink-muted mt-1 line-clamp-1">
+                          {item.description}
                         </div>
-                    </button>
-                </div>
-            )}
-
-            {/* Add Item Modal */}
-            {showAddModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
-                    <div className="bg-white rounded-lg max-w-lg w-full p-6 shadow-xl">
-                        <h3 className="text-xl font-bold mb-4">Add New Item</h3>
-                        <form onSubmit={handleCreateItem} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                                <input
-                                    type="text"
-                                    required
-                                    value={newItemForm.name}
-                                    onChange={(e) => setNewItemForm({ ...newItemForm, name: e.target.value })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-                                    placeholder="e.g., Legal Consultation"
-                                    autoFocus
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Alias (quick search)</label>
-                                    <input
-                                        type="text"
-                                        value={newItemForm.alias}
-                                        onChange={(e) => setNewItemForm({ ...newItemForm, alias: e.target.value })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-                                        placeholder="e.g., consult"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">HSN/SAC Code</label>
-                                    <input
-                                        type="text"
-                                        value={newItemForm.hsn_code}
-                                        onChange={(e) => setNewItemForm({ ...newItemForm, hsn_code: e.target.value })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-                                        placeholder="e.g., 998231"
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Description (for invoice)</label>
-                                <input
-                                    type="text"
-                                    value={newItemForm.description}
-                                    onChange={(e) => setNewItemForm({ ...newItemForm, description: e.target.value })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-                                    placeholder="Description shown on invoice"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Default Rate (₹)</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        value={newItemForm.default_rate}
-                                        onChange={(e) => setNewItemForm({ ...newItemForm, default_rate: parseFloat(e.target.value) || 0 })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                                    <select
-                                        value={newItemForm.unit}
-                                        onChange={(e) => setNewItemForm({ ...newItemForm, unit: e.target.value })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-                                    >
-                                        <option value="hour">Hour</option>
-                                        <option value="day">Day</option>
-                                        <option value="unit">Unit</option>
-                                        <option value="fixed">Fixed</option>
-                                        <option value="meeting">Meeting</option>
-                                        <option value="hearing">Hearing</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div className="flex gap-3 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => { setShowAddModal(false); resetForm(); }}
-                                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={createMutation.isPending}
-                                    className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-                                >
-                                    {createMutation.isPending ? 'Adding...' : 'Add & Select'}
-                                </button>
-                            </div>
-                        </form>
+                      )}
                     </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-mono text-sm text-ink tabular">{formatRate(item.default_rate)}</div>
+                      <div className="text-2xs text-ink-muted uppercase tracking-eyebrow">/{item.unit}</div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </>
+          )}
+
+          <button
+            type="button"
+            onClick={handleAddNewItem}
+            className="w-full text-left px-4 py-3 hover:bg-status-paid-wash
+                       border-t border-rule bg-paper-deep transition-colors group"
+          >
+            <div className="flex items-center gap-3 text-status-paid">
+              <Plus size={14} strokeWidth={2} className="shrink-0" />
+              <div className="text-sm">
+                <span className="font-medium">Add</span>
+                <span className="font-mono mx-1 text-ink">"{search}"</span>
+                <span className="font-medium">to catalog</span>
+                <div className="text-2xs uppercase tracking-eyebrow text-ink-muted mt-0.5">
+                  Save for future invoices
                 </div>
-            )}
+              </div>
+            </div>
+          </button>
         </div>
-    );
+      )}
+
+      {/* Add Item Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-fade-in">
+          <div className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]"
+               onClick={() => { setShowAddModal(false); resetForm(); }} />
+
+          <div className="relative bg-surface border border-rule rounded-DEFAULT max-w-lg w-full
+                          shadow-modal animate-fade-up">
+            <div className="h-[3px] bg-oxblood" />
+
+            <div className="p-8">
+              <button
+                onClick={() => { setShowAddModal(false); resetForm(); }}
+                className="absolute top-5 right-5 text-ink-faint hover:text-ink-muted transition-colors"
+                aria-label="Close"
+              >
+                <X size={20} strokeWidth={1.5} />
+              </button>
+
+              <div className="mb-6">
+                <div className="page-eyebrow">New entry</div>
+                <h3 className="page-title !text-2xl">Add to your catalog</h3>
+              </div>
+
+              <form onSubmit={handleCreateItem} className="space-y-4">
+                <div>
+                  <label className="field-label">Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newItemForm.name}
+                    onChange={(e) => setNewItemForm({ ...newItemForm, name: e.target.value })}
+                    className="field-input"
+                    placeholder="e.g., Legal Consultation"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="field-label">Alias</label>
+                    <input
+                      type="text"
+                      value={newItemForm.alias}
+                      onChange={(e) => setNewItemForm({ ...newItemForm, alias: e.target.value })}
+                      className="field-input font-mono"
+                      placeholder="consult"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">HSN/SAC</label>
+                    <input
+                      type="text"
+                      value={newItemForm.hsn_code}
+                      onChange={(e) => setNewItemForm({ ...newItemForm, hsn_code: e.target.value })}
+                      className="field-input font-mono"
+                      placeholder="998231"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="field-label">Description (printed on invoice)</label>
+                  <input
+                    type="text"
+                    value={newItemForm.description}
+                    onChange={(e) => setNewItemForm({ ...newItemForm, description: e.target.value })}
+                    className="field-input"
+                    placeholder="Description shown on invoice"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="field-label">Default rate (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newItemForm.default_rate}
+                      onChange={(e) => setNewItemForm({
+                        ...newItemForm,
+                        default_rate: parseFloat(e.target.value) || 0,
+                      })}
+                      className="field-input font-mono tabular"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label">Unit</label>
+                    <select
+                      value={newItemForm.unit}
+                      onChange={(e) => setNewItemForm({ ...newItemForm, unit: e.target.value })}
+                      className="field-select"
+                    >
+                      <option value="hour">Hour</option>
+                      <option value="day">Day</option>
+                      <option value="unit">Unit</option>
+                      <option value="fixed">Fixed</option>
+                      <option value="meeting">Meeting</option>
+                      <option value="hearing">Hearing</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => { setShowAddModal(false); resetForm(); }}
+                    className="btn-ghost flex-1"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={createMutation.isPending}
+                    className="btn-primary flex-1"
+                  >
+                    {createMutation.isPending ? 'Adding…' : 'Add & select'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

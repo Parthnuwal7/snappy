@@ -1,0 +1,53 @@
+# Anything not needed to run the backend in production. Cloud Build uploads
+# the build context to GCS, so keeping this lean speeds up deploys and
+# prevents accidentally shipping secrets / large assets in the image.
+
+# Frontend + marketing site — built and deployed separately on Vercel
+frontend/
+website/
+src-tauri/
+
+# Local Python/venv
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+backend/venv/
+backend/.venv/
+backend/.python-version
+
+# Local databases and analytics caches (rebuilt on first request)
+**/*.db
+**/*.duckdb
+**/*.sqlite
+instance/
+
+# Secrets — must come from Secret Manager, never bake into image
+.env
+.env.*
+backend/.env
+backend/.env.*
+ADMIN_CREDENTIALS.md
+
+# Dev / scripts / tests / docs
+scripts/
+backend/tests/
+backend/migrations/   # applied out-of-band, not at container start
+*.md
+LICENSE
+
+# Repo metadata
+.git/
+.github/
+.gitignore
+.vscode/
+.idea/
+
+# Project assets that don't belong in the image
+*.png
+*.jpg
+*.jpeg
+*.bat
+*.ps1
+package-lock.json
+package.json
+node_modules/

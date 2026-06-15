@@ -1,43 +1,24 @@
 import { Check, X, Zap, Crown, Building2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import UPIPaymentModal from '../components/UPIPaymentModal';
+
+const APP_URL = import.meta.env.VITE_APP_URL || 'https://snappy-billing.vercel.app';
 
 const Pricing = () => {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<'starter' | 'pro' | 'enterprise' | null>(null);
 
   const handleGetStarted = (planName: string) => {
     if (planName === 'Trial') {
-      // Handle free trial - could redirect to download page
       navigate('/download');
       return;
     }
-
     if (planName === 'Enterprise') {
-      // Redirect to contact/support for enterprise
       navigate('/support');
       return;
     }
-
-    // For Starter and Pro plans
-    if (!isAuthenticated) {
-      // Redirect to register with plan info
-      navigate('/register', { state: { plan: planName.toLowerCase() } });
-      return;
-    }
-
-    // Show UPI payment modal
-    setSelectedPlan(planName.toLowerCase() as 'starter' | 'pro' | 'enterprise');
-    setShowPaymentModal(true);
+    // Paid plans: send users to the app to sign up; billing happens there.
+    window.location.href = APP_URL;
   };
 
-  const handlePaymentSuccess = () => {
-    navigate('/dashboard');
-  };
   const plans = [
     {
       name: 'Trial',
@@ -280,14 +261,6 @@ const Pricing = () => {
         </div>
       </div>
 
-      {/* UPI Payment Modal */}
-      {showPaymentModal && selectedPlan && (
-        <UPIPaymentModal
-          plan={selectedPlan}
-          onClose={() => setShowPaymentModal(false)}
-          onSuccess={handlePaymentSuccess}
-        />
-      )}
     </div>
   );
 };

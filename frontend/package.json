@@ -16,8 +16,11 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",
     "@tanstack/react-query": "^5.17.0",
+    "baseline-browser-mapping": "^2.10.31",
+    "caniuse-lite": "^1.0.30001793",
     "clsx": "^2.1.0",
     "date-fns": "^3.0.6",
+    "lucide-react": "^0.456.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.49.2",

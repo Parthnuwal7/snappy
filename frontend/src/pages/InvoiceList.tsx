@@ -3,18 +3,32 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useState, useMemo } from 'react';
 import { api, Invoice, Client } from '../api';
 import InvoicePreview from '../components/InvoicePreview';
+import {
+  Plus, Search, ChevronDown, ChevronUp, ChevronsUpDown,
+  Eye, Pencil, Copy, Download, X,
+} from 'lucide-react';
 
 type SortField = 'invoice_date' | 'client_name' | 'invoice_number' | 'total';
 type SortOrder = 'asc' | 'desc';
 
+const formatINR = (value: number) =>
+  '₹' + value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const formatDate = (date: string) =>
+  new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+const statusPill: Record<string, string> = {
+  draft:   'pill-draft',
+  sent:    'pill-pending',
+  paid:    'pill-paid',
+  void:    'pill-overdue',
+};
+
 export default function InvoiceList() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [filters, setFilters] = useState({
-    status: '',
-    search: '',
-    client_id: '',
-    start_date: '',
-    end_date: '',
+    status: '', search: '', client_id: '', start_date: '', end_date: '',
   });
   const [sortField, setSortField] = useState<SortField>('invoice_date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
@@ -22,9 +36,6 @@ export default function InvoiceList() {
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
-  const queryClient = useQueryClient();
-
-  // Fetch invoices with filters
   const { data: invoices, isLoading } = useQuery({
     queryKey: ['invoices', filters],
     queryFn: () => api.getInvoices({
@@ -36,39 +47,24 @@ export default function InvoiceList() {
     }),
   });
 
-  // Fetch clients for filter dropdown
   const { data: clients } = useQuery({
     queryKey: ['clients'],
     queryFn: () => api.getClients(),
   });
 
-  // Sort invoices
   const sortedInvoices = useMemo(() => {
     if (!invoices) return [];
     return [...invoices].sort((a, b) => {
-      let aVal: any, bVal: any;
+      let aV: any, bV: any;
       switch (sortField) {
-        case 'invoice_date':
-          aVal = new Date(a.invoice_date).getTime();
-          bVal = new Date(b.invoice_date).getTime();
-          break;
-        case 'client_name':
-          aVal = (a.client_name || '').toLowerCase();
-          bVal = (b.client_name || '').toLowerCase();
-          break;
-        case 'invoice_number':
-          aVal = a.invoice_number;
-          bVal = b.invoice_number;
-          break;
-        case 'total':
-          aVal = a.total;
-          bVal = b.total;
-          break;
-        default:
-          return 0;
+        case 'invoice_date':   aV = new Date(a.invoice_date).getTime(); bV = new Date(b.invoice_date).getTime(); break;
+        case 'client_name':    aV = (a.client_name || '').toLowerCase(); bV = (b.client_name || '').toLowerCase(); break;
+        case 'invoice_number': aV = a.invoice_number; bV = b.invoice_number; break;
+        case 'total':          aV = a.total; bV = b.total; break;
+        default: return 0;
       }
-      if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+      if (aV < bV) return sortOrder === 'asc' ? -1 : 1;
+      if (aV > bV) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
   }, [invoices, sortField, sortOrder]);
@@ -76,53 +72,36 @@ export default function InvoiceList() {
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) =>
       api.updateInvoice(id, { status: status as 'draft' | 'sent' | 'paid' | 'void' }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      setStatusMenuOpen(null);
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['invoices'] }); setStatusMenuOpen(null); },
   });
-
   const markPaidMutation = useMutation({
     mutationFn: (id: number) => api.markInvoicePaid(id, new Date().toISOString().split('T')[0]),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      setStatusMenuOpen(null);
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['invoices'] }); setStatusMenuOpen(null); },
   });
-
   const duplicateMutation = useMutation({
     mutationFn: (id: number) => api.duplicateInvoice(id),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      // Navigate to edit the new invoice
       navigate(`/invoices/${data.invoice.id}/edit`);
     },
   });
 
   const handleStatusChange = (id: number, status: string) => {
-    if (status === 'paid') {
-      markPaidMutation.mutate(id);
-    } else {
-      updateStatusMutation.mutate({ id, status });
-    }
+    if (status === 'paid') markPaidMutation.mutate(id);
+    else updateStatusMutation.mutate({ id, status });
   };
 
   const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortOrder('desc');
-    }
+    if (sortField === field) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortOrder('desc'); }
   };
 
-  const getSortIcon = (field: SortField) => {
-    if (sortField !== field) return '↕';
-    return sortOrder === 'asc' ? '↑' : '↓';
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <ChevronsUpDown size={11} strokeWidth={2} className="text-ink-faint" />;
+    return sortOrder === 'asc'
+      ? <ChevronUp size={11} strokeWidth={2} className="text-oxblood" />
+      : <ChevronDown size={11} strokeWidth={2} className="text-oxblood" />;
   };
-
-  const formatCurrency = (value: number) => `₹${value.toLocaleString('en-IN')}`;
-  const formatDate = (date: string) => new Date(date).toLocaleDateString('en-IN');
 
   const handleGeneratePDF = async (id: number, invoiceNumber: string) => {
     try {
@@ -133,79 +112,62 @@ export default function InvoiceList() {
       a.download = `SNAPPY_INV_${invoiceNumber.replace(/\//g, '_')}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Failed to generate PDF:', error);
+    } catch (e) {
+      console.error(e);
       alert('Failed to generate PDF');
     }
   };
 
   const handleDuplicate = (id: number) => {
-    if (confirm('Create a duplicate of this invoice?')) {
-      duplicateMutation.mutate(id);
-    }
+    if (confirm('Create a duplicate of this invoice?')) duplicateMutation.mutate(id);
   };
 
-  const getStatusBadge = (status: string) => {
-    const styles = {
-      draft: 'bg-gray-100 text-gray-800',
-      sent: 'bg-blue-100 text-blue-800',
-      paid: 'bg-green-100 text-green-800',
-      void: 'bg-red-100 text-red-800',
-    };
-    return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[status as keyof typeof styles] || styles.draft}`}>
-        {status.toUpperCase()}
-      </span>
-    );
-  };
-
-  const clearFilters = () => {
-    setFilters({
-      status: '',
-      search: '',
-      client_id: '',
-      start_date: '',
-      end_date: '',
-    });
-  };
+  const clearFilters = () => setFilters({ status: '', search: '', client_id: '', start_date: '', end_date: '' });
+  const hasFilters = !!(filters.status || filters.search || filters.client_id || filters.start_date || filters.end_date);
 
   return (
-    <div className="p-8">
-      <div className="mb-8 flex justify-between items-center">
+    <div className="max-w-page mx-auto px-8 lg:px-12 py-10">
+      {/* Header */}
+      <header className="flex items-end justify-between flex-wrap gap-6 mb-10">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
-          <p className="text-gray-600 mt-1">Manage and track all invoices</p>
+          <div className="page-eyebrow">Folio II · Invoices</div>
+          <h1 className="page-title">Invoice register</h1>
+          <p className="page-subtitle">
+            Every invoice issued, in order. Filter, sort, mark paid, regenerate PDFs.
+          </p>
         </div>
-        <Link
-          to="/invoices/new"
-          className="px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium"
-        >
-          + New Invoice
+        <Link to="/invoices/new" className="btn-primary">
+          <Plus size={14} strokeWidth={2} />
+          <span>New invoice</span>
         </Link>
-      </div>
+      </header>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
+      <div className="card p-5 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
-            <input
-              type="text"
-              data-search
-              placeholder="Invoice # or description..."
-              value={filters.search}
-              onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-            />
+          <div className="lg:col-span-2">
+            <label className="field-label">Search</label>
+            <div className="relative">
+              <Search size={14} strokeWidth={1.5}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
+              <input
+                type="text"
+                data-search
+                placeholder="Invoice # or description"
+                value={filters.search}
+                onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                className="field-input pl-9"
+              />
+            </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+            <label className="field-label">Status</label>
             <select
               value={filters.status}
               onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+              className="field-select"
             >
-              <option value="">All Statuses</option>
+              <option value="">All</option>
               <option value="draft">Draft</option>
               <option value="sent">Sent</option>
               <option value="paid">Paid</option>
@@ -213,180 +175,155 @@ export default function InvoiceList() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Client</label>
+            <label className="field-label">Client</label>
             <select
               value={filters.client_id}
               onChange={(e) => setFilters({ ...filters, client_id: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+              className="field-select"
             >
-              <option value="">All Clients</option>
-              {clients?.map((client: Client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name}
-                </option>
+              <option value="">All clients</option>
+              {clients?.map((c: Client) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">From Date</label>
-            <input
-              type="date"
-              value={filters.start_date}
-              onChange={(e) => setFilters({ ...filters, start_date: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">To Date</label>
-            <input
-              type="date"
-              value={filters.end_date}
-              onChange={(e) => setFilters({ ...filters, end_date: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
-            />
+          <div className="grid grid-cols-2 gap-2 lg:col-span-1">
+            <div>
+              <label className="field-label">From</label>
+              <input
+                type="date"
+                value={filters.start_date}
+                onChange={(e) => setFilters({ ...filters, start_date: e.target.value })}
+                className="field-input font-mono text-xs px-2"
+              />
+            </div>
+            <div>
+              <label className="field-label">To</label>
+              <input
+                type="date"
+                value={filters.end_date}
+                onChange={(e) => setFilters({ ...filters, end_date: e.target.value })}
+                className="field-input font-mono text-xs px-2"
+              />
+            </div>
           </div>
         </div>
-        {(filters.status || filters.search || filters.client_id || filters.start_date || filters.end_date) && (
-          <button
-            onClick={clearFilters}
-            className="mt-4 text-sm text-primary-600 hover:text-primary-800"
-          >
-            Clear all filters
-          </button>
+
+        {hasFilters && (
+          <div className="mt-4 pt-4 border-t border-rule-soft flex items-center justify-between">
+            <span className="eyebrow">Filters active</span>
+            <button onClick={clearFilters}
+                    className="text-xs uppercase tracking-eyebrow text-oxblood hover:text-oxblood-deep flex items-center gap-1">
+              <X size={11} strokeWidth={2} />
+              <span>Clear all</span>
+            </button>
+          </div>
         )}
       </div>
 
-      {/* Invoice Table */}
-      <div className="bg-white rounded-lg shadow">
+      {/* Table */}
+      <div className="card overflow-hidden">
         {isLoading ? (
-          <div className="p-12 text-center">
-            <div className="spinner mx-auto"></div>
-          </div>
+          <div className="p-16 flex justify-center"><div className="spinner" /></div>
         ) : sortedInvoices && sortedInvoices.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="table-editorial">
+              <thead>
                 <tr>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('invoice_number')}
-                  >
-                    Invoice No. {getSortIcon('invoice_number')}
+                  <th className="cursor-pointer hover:text-ink" onClick={() => handleSort('invoice_number')}>
+                    <span className="inline-flex items-center gap-1.5">Invoice no. <SortIcon field="invoice_number" /></span>
                   </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('invoice_date')}
-                  >
-                    Date {getSortIcon('invoice_date')}
+                  <th className="cursor-pointer hover:text-ink" onClick={() => handleSort('invoice_date')}>
+                    <span className="inline-flex items-center gap-1.5">Date <SortIcon field="invoice_date" /></span>
                   </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('client_name')}
-                  >
-                    Client {getSortIcon('client_name')}
+                  <th className="cursor-pointer hover:text-ink" onClick={() => handleSort('client_name')}>
+                    <span className="inline-flex items-center gap-1.5">Client <SortIcon field="client_name" /></span>
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Description
+                  <th>Description</th>
+                  <th className="cursor-pointer hover:text-ink !text-right" onClick={() => handleSort('total')}>
+                    <span className="inline-flex items-center gap-1.5">Amount <SortIcon field="total" /></span>
                   </th>
-                  <th
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                    onClick={() => handleSort('total')}
-                  >
-                    Amount {getSortIcon('total')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
+                  <th>Status</th>
+                  <th className="!text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody>
                 {sortedInvoices.map((invoice) => (
-                  <tr key={invoice.id} className="hover:bg-gray-50 relative">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {invoice.invoice_number}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDate(invoice.invoice_date)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {invoice.client_name}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">
-                      {invoice.short_desc || '—'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {formatCurrency(invoice.total)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  <tr key={invoice.id}>
+                    <td className="font-mono text-ink">{invoice.invoice_number}</td>
+                    <td className="font-mono text-ink-muted tabular">{formatDate(invoice.invoice_date)}</td>
+                    <td className="text-ink">{invoice.client_name}</td>
+                    <td className="text-ink-muted max-w-xs truncate">{invoice.short_desc || '—'}</td>
+                    <td className="text-right font-mono text-ink tabular">{formatINR(invoice.total)}</td>
+                    <td>
                       <div className="relative inline-block">
                         <button
                           onClick={() => setStatusMenuOpen(statusMenuOpen === invoice.id ? null : invoice.id)}
-                          className="flex items-center space-x-1"
+                          className="flex items-center gap-1 hover:opacity-80 transition-opacity"
                         >
-                          {getStatusBadge(invoice.status)}
-                          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
+                          <span className={statusPill[invoice.status] || 'pill-draft'}>
+                            {invoice.status}
+                          </span>
+                          <ChevronDown size={11} strokeWidth={2} className="text-ink-faint" />
                         </button>
                         {statusMenuOpen === invoice.id && (
                           <>
-                            <div
-                              className="fixed inset-0 z-10"
-                              onClick={() => setStatusMenuOpen(null)}
-                            />
-                            <div className="absolute left-0 z-20 mt-2 w-36 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
-                              <div className="py-1" role="menu">
-                                {['draft', 'sent', 'paid', 'void'].map((status) => (
-                                  <button
-                                    key={status}
-                                    onClick={() => handleStatusChange(invoice.id, status)}
-                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    disabled={invoice.status === status}
-                                  >
-                                    {status.charAt(0).toUpperCase() + status.slice(1)}
-                                    {invoice.status === status && ' ✓'}
-                                  </button>
-                                ))}
-                              </div>
+                            <div className="fixed inset-0 z-10" onClick={() => setStatusMenuOpen(null)} />
+                            <div className="absolute left-0 z-20 mt-1.5 min-w-[140px] bg-surface
+                                            border border-rule rounded-DEFAULT shadow-modal py-1">
+                              {(['draft', 'sent', 'paid', 'void'] as const).map((s) => (
+                                <button
+                                  key={s}
+                                  onClick={() => handleStatusChange(invoice.id, s)}
+                                  disabled={invoice.status === s}
+                                  className="w-full text-left px-3 py-1.5 text-sm text-ink-soft
+                                             hover:bg-paper-deep disabled:opacity-40 flex items-center justify-between"
+                                >
+                                  <span className="capitalize">{s}</span>
+                                  {invoice.status === s && <span className="text-oxblood">✓</span>}
+                                </button>
+                              ))}
                             </div>
                           </>
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 space-x-2">
-                      <button
-                        onClick={async () => {
-                          // Fetch full invoice with items before preview
-                          const fullInvoice = await api.getInvoice(invoice.id);
-                          setPreviewInvoice(fullInvoice);
-                          setIsPreviewOpen(true);
-                        }}
-                        className="text-indigo-600 hover:text-indigo-800"
-                      >
-                        Preview
-                      </button>
-                      <Link
-                        to={`/invoices/${invoice.id}/edit`}
-                        className="text-primary-600 hover:text-primary-800"
-                      >
-                        Edit
-                      </Link>
-                      <button
-                        onClick={() => handleDuplicate(invoice.id)}
-                        className="text-amber-600 hover:text-amber-800"
-                        disabled={duplicateMutation.isPending}
-                      >
-                        Duplicate
-                      </button>
-                      <button
-                        onClick={() => handleGeneratePDF(invoice.id, invoice.invoice_number)}
-                        className="text-green-600 hover:text-green-800"
-                      >
-                        PDF
-                      </button>
+                    <td>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <button
+                          onClick={async () => {
+                            const full = await api.getInvoice(invoice.id);
+                            setPreviewInvoice(full);
+                            setIsPreviewOpen(true);
+                          }}
+                          className="p-1.5 text-ink-muted hover:text-ink hover:bg-paper-deep rounded-sm transition-colors"
+                          title="Preview"
+                        >
+                          <Eye size={14} strokeWidth={1.5} />
+                        </button>
+                        <Link
+                          to={`/invoices/${invoice.id}/edit`}
+                          className="p-1.5 text-ink-muted hover:text-ink hover:bg-paper-deep rounded-sm transition-colors"
+                          title="Edit"
+                        >
+                          <Pencil size={14} strokeWidth={1.5} />
+                        </Link>
+                        <button
+                          onClick={() => handleDuplicate(invoice.id)}
+                          disabled={duplicateMutation.isPending}
+                          className="p-1.5 text-ink-muted hover:text-ink hover:bg-paper-deep rounded-sm transition-colors disabled:opacity-40"
+                          title="Duplicate"
+                        >
+                          <Copy size={14} strokeWidth={1.5} />
+                        </button>
+                        <button
+                          onClick={() => handleGeneratePDF(invoice.id, invoice.invoice_number)}
+                          className="p-1.5 text-ink-muted hover:text-oxblood hover:bg-oxblood-wash rounded-sm transition-colors"
+                          title="Download PDF"
+                        >
+                          <Download size={14} strokeWidth={1.5} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -394,26 +331,30 @@ export default function InvoiceList() {
             </table>
           </div>
         ) : (
-          <div className="p-12 text-center text-gray-500">
-            <p className="text-lg mb-4">No invoices found</p>
-            <Link
-              to="/invoices/new"
-              className="text-primary-600 hover:text-primary-800 font-medium"
-            >
-              Create your first invoice
-            </Link>
+          <div className="p-16 text-center">
+            <div className="page-eyebrow">Empty register</div>
+            <h2 className="section-title mt-2">
+              {hasFilters ? 'No invoices match your filters' : 'No invoices yet'}
+            </h2>
+            <p className="text-base text-ink-muted mt-3">
+              {hasFilters
+                ? 'Try widening your search or clearing filters.'
+                : 'Create your first invoice to get started.'}
+            </p>
+            {!hasFilters && (
+              <Link to="/invoices/new" className="btn-primary mt-6 inline-flex">
+                <Plus size={14} strokeWidth={2} />
+                <span>Create first invoice</span>
+              </Link>
+            )}
           </div>
         )}
       </div>
 
-      {/* Invoice Preview Modal */}
       <InvoicePreview
         invoice={previewInvoice}
         isOpen={isPreviewOpen}
-        onClose={() => {
-          setIsPreviewOpen(false);
-          setPreviewInvoice(null);
-        }}
+        onClose={() => { setIsPreviewOpen(false); setPreviewInvoice(null); }}
       />
     </div>
   );
