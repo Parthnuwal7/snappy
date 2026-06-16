@@ -109,7 +109,14 @@ class Invoice(db.Model):
     # Status
     status = db.Column(db.String(20), default='draft')
     paid_date = db.Column(db.Date)
-    
+
+    # Delivery tracking — set when the invoice is sent to the client.
+    sent_at = db.Column(db.DateTime)
+    sent_channel = db.Column(db.String(20))  # 'email' | 'whatsapp'
+
+    # Provenance: 'manual' (default) or 'recurring' (created by a schedule)
+    source = db.Column(db.String(20), default='manual')
+
     # Metadata
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -146,7 +153,10 @@ class Invoice(db.Model):
             'tax_amount': _money(self.tax_amount),
             'total': _money(self.total),
             'status': self.status,
+            'source': self.source,
             'paid_date': self.paid_date.isoformat() if self.paid_date else None,
+            'sent_at': self.sent_at.isoformat() if self.sent_at else None,
+            'sent_channel': self.sent_channel,
             'notes': self.notes,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
@@ -178,6 +188,51 @@ class InvoiceItem(db.Model):
             'quantity': _money(self.quantity),
             'rate': _money(self.rate),
             'amount': _money(self.amount)
+        }
+
+
+class RecurringSchedule(db.Model):
+    """A recurring invoice template that auto-creates draft invoices on a cadence."""
+    __tablename__ = 'recurring_schedules'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False)
+    title = db.Column(db.String(200))
+    items = db.Column(db.JSON, nullable=False, default=list)
+    tax_rate = db.Column(db.Numeric(5, 2), default=18.0)
+    short_desc = db.Column(db.Text)
+    notes = db.Column(db.Text)
+    frequency = db.Column(db.String(20), nullable=False)  # 'weekly' | 'monthly'
+    start_date = db.Column(db.Date, nullable=False)
+    next_run_date = db.Column(db.Date, nullable=False, index=True)
+    end_date = db.Column(db.Date)            # optional; None = until paused
+    last_run_date = db.Column(db.Date)
+    active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    client = db.relationship('Client')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'client_id': self.client_id,
+            'client_name': self.client.name if self.client else None,
+            'title': self.title,
+            'items': self.items or [],
+            'tax_rate': _money(self.tax_rate),
+            'short_desc': self.short_desc,
+            'notes': self.notes,
+            'frequency': self.frequency,
+            'start_date': self.start_date.isoformat() if self.start_date else None,
+            'next_run_date': self.next_run_date.isoformat() if self.next_run_date else None,
+            'end_date': self.end_date.isoformat() if self.end_date else None,
+            'last_run_date': self.last_run_date.isoformat() if self.last_run_date else None,
+            'active': self.active,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
 
 

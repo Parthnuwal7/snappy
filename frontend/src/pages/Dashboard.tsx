@@ -7,7 +7,8 @@ import {
   Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts';
 import WelcomePreferencesModal from '../components/WelcomePreferencesModal';
-import { TrendingUp, FileText, IndianRupee } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { TrendingUp, FileText, IndianRupee, Bell } from 'lucide-react';
 
 /* -------------------------------------------------------------------------- */
 /* Formatters                                                                 */
@@ -152,6 +153,11 @@ export default function Dashboard() {
     queryFn: () => api.getAgingBuckets(),
   });
 
+  const { data: reminders } = useQuery({
+    queryKey: ['recurring', 'reminders'],
+    queryFn: () => api.getRecurringReminders(),
+  });
+
   // Derived metrics
   const totalRevenue   = monthlyData?.reduce((s, m) => s + m.revenue, 0) ?? 0;
   const totalInvoices  = monthlyData?.reduce((s, m) => s + m.invoice_count, 0) ?? 0;
@@ -198,6 +204,32 @@ export default function Dashboard() {
           </div>
         </div>
       </header>
+
+      {/* ---- Recurring draft reminders ----------------------------------- */}
+      {reminders && reminders.length > 0 && (
+        <div className="card p-5 mb-8 border-l-2 border-oxblood">
+          <div className="flex items-start gap-3">
+            <Bell size={18} strokeWidth={1.5} className="text-oxblood mt-0.5" />
+            <div className="flex-1">
+              <div className="eyebrow mb-2">Recurring drafts to review</div>
+              <ul className="space-y-1.5">
+                {reminders.map((inv) => (
+                  <li key={inv.id} className="text-sm text-ink-soft flex items-center justify-between gap-4">
+                    <span>
+                      <span className="font-medium text-ink">{inv.client_name}</span>{' '}
+                      is due {formatINR(inv.total)} today — draft invoice created.
+                    </span>
+                    <Link to={`/invoices/${inv.id}/edit`}
+                          className="text-xs uppercase tracking-eyebrow text-oxblood hover:text-oxblood-deep whitespace-nowrap">
+                      Review →
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---- Key Metrics ------------------------------------------------- */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-px bg-rule mb-12 border border-rule">

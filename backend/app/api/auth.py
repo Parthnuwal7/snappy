@@ -194,6 +194,7 @@ def manage_firm():
     firm_fields = [
         'firm_name', 'firm_address', 'firm_email', 'firm_phone', 'firm_phone_2',
         'firm_website', 'terms_and_conditions', 'billing_terms',
+        'email_subject_template', 'email_body_template', 'whatsapp_template',
         'default_template', 'invoice_prefix', 'currency', 'logo_path', 'signature_path'
     ]
     

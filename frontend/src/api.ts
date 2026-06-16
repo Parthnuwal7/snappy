@@ -34,6 +34,7 @@ export const API_ENDPOINTS = {
   backup: `${API_BASE_URL}/backup`,
   restore: `${API_BASE_URL}/restore`,
   items: `${API_BASE_URL}/items`,
+  recurring: `${API_BASE_URL}/recurring`,
 };
 
 // Types
@@ -86,10 +87,76 @@ export interface Invoice {
   total: number;
   status: 'draft' | 'sent' | 'paid' | 'void';
   paid_date?: string;
+  sent_at?: string;
+  sent_channel?: 'email' | 'whatsapp';
   notes?: string;
   items?: InvoiceItem[];
   created_at?: string;
   updated_at?: string;
+}
+
+export interface SendResult {
+  channel: 'email' | 'whatsapp';
+  whatsapp_url?: string;
+  sent_to?: string;
+  status: string;
+  sent_at?: string;
+  sent_channel?: string;
+}
+
+export interface PublicInvoice {
+  invoice_number: string;
+  invoice_date?: string;
+  due_date?: string;
+  status: string;
+  short_desc?: string;
+  subtotal?: number;
+  tax_rate?: number;
+  tax_amount?: number;
+  total?: number;
+  client_name?: string;
+  items: InvoiceItem[];
+  firm?: {
+    firm_name?: string;
+    firm_address?: string;
+    firm_email?: string;
+    firm_phone?: string;
+    firm_website?: string;
+  } | null;
+  payment?: {
+    upi_id?: string;
+    bank_name?: string;
+    account_number?: string;
+    ifsc_code?: string;
+    account_holder_name?: string;
+  } | null;
+}
+
+export interface RecurringSchedule {
+  id: number;
+  client_id: number;
+  client_name?: string;
+  title?: string;
+  items: { description: string; quantity: number; rate: number }[];
+  tax_rate: number;
+  short_desc?: string;
+  notes?: string;
+  frequency: 'weekly' | 'monthly';
+  start_date: string;
+  next_run_date: string;
+  end_date?: string;
+  last_run_date?: string;
+  active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Paginated<T> {
+  data: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
 }
 
 export interface MonthlyRevenue {
@@ -158,7 +225,18 @@ export const api = {
     return fetchAPI<Client[]>(url);
   },
 
+  getClientsPaged: (params: { page: number; page_size?: number; search?: string }) => {
+    const q = new URLSearchParams();
+    q.append('page', String(params.page));
+    q.append('page_size', String(params.page_size ?? 50));
+    if (params.search) q.append('search', params.search);
+    return fetchAPI<Paginated<Client>>(`${API_ENDPOINTS.clients}?${q}`);
+  },
+
   getClient: (id: number) => fetchAPI<Client>(`${API_ENDPOINTS.clients}/${id}`),
+
+  getRecentClients: (limit = 6) =>
+    fetchAPI<Client[]>(`${API_ENDPOINTS.clients}/recent?limit=${limit}`),
 
   createClient: (data: Partial<Client>) =>
     fetchAPI<Client>(API_ENDPOINTS.clients, {
@@ -184,6 +262,15 @@ export const api = {
     if (!activeOnly) params.append('active', 'false');
     const url = params.toString() ? `${API_ENDPOINTS.items}?${params}` : API_ENDPOINTS.items;
     return fetchAPI<Item[]>(url);
+  },
+
+  getItemsPaged: (params: { page: number; page_size?: number; search?: string; activeOnly?: boolean }) => {
+    const q = new URLSearchParams();
+    q.append('page', String(params.page));
+    q.append('page_size', String(params.page_size ?? 50));
+    if (params.search) q.append('search', params.search);
+    if (params.activeOnly === false) q.append('active', 'false');
+    return fetchAPI<Paginated<Item>>(`${API_ENDPOINTS.items}?${q}`);
   },
 
   getItem: (id: number) => fetchAPI<Item>(`${API_ENDPOINTS.items}/${id}`),
@@ -225,6 +312,29 @@ export const api = {
     return fetchAPI<Invoice[]>(url);
   },
 
+  getInvoicesPaged: (params: {
+    page: number;
+    page_size?: number;
+    status?: string;
+    search?: string;
+    client_id?: number;
+    start_date?: string;
+    end_date?: string;
+    sort?: string;
+    order?: 'asc' | 'desc';
+  }) => {
+    const q = new URLSearchParams();
+    q.append('page', String(params.page));
+    q.append('page_size', String(params.page_size ?? 50));
+    (['status', 'search', 'client_id', 'start_date', 'end_date', 'sort', 'order'] as const).forEach((key) => {
+      const value = params[key];
+      if (value !== undefined && value !== null && value !== '') {
+        q.append(key, String(value));
+      }
+    });
+    return fetchAPI<Paginated<Invoice>>(`${API_ENDPOINTS.invoices}?${q}`);
+  },
+
   getInvoice: (id: number) => fetchAPI<Invoice>(`${API_ENDPOINTS.invoices}/${id}`),
 
   createInvoice: (data: Partial<Invoice>) =>
@@ -245,7 +355,7 @@ export const api = {
       body: JSON.stringify({ paid_date: paidDate }),
     }),
 
-  generatePDF: async (id: number): Promise<Blob> => {
+  generatePDF: async (id: number, layout: 'single' | 'two_up' = 'single'): Promise<Blob> => {
     // Get JWT token from Supabase session
     const { supabase } = await import('./lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
@@ -255,7 +365,8 @@ export const api = {
       headers['Authorization'] = `Bearer ${session.access_token}`;
     }
 
-    const response = await fetch(`${API_ENDPOINTS.invoices}/${id}/generate_pdf`, {
+    const qs = layout === 'two_up' ? '?layout=two_up' : '';
+    const response = await fetch(`${API_ENDPOINTS.invoices}/${id}/generate_pdf${qs}`, {
       method: 'POST',
       headers,
     });
@@ -269,6 +380,63 @@ export const api = {
     fetchAPI<{ message: string; invoice: Invoice }>(`${API_ENDPOINTS.invoices}/${id}/duplicate`, {
       method: 'POST',
     }),
+
+  // Send an invoice over a channel. For 'whatsapp' the result carries a
+  // whatsapp_url the caller should window.open. `base_url` should be the
+  // frontend origin so public links resolve in local & prod.
+  sendInvoice: (
+    id: number,
+    payload: { channel: 'email' | 'whatsapp'; subject?: string; body?: string; base_url?: string },
+  ) =>
+    fetchAPI<SendResult>(`${API_ENDPOINTS.invoices}/${id}/send`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  // Get a signed, shareable public link to an invoice. Pass the frontend
+  // origin as baseUrl so the link points at this site.
+  getInvoiceShareLink: (id: number, baseUrl: string) =>
+    fetchAPI<{ link: string }>(
+      `${API_ENDPOINTS.invoices}/${id}/share_link?base_url=${encodeURIComponent(baseUrl)}`,
+    ),
+
+  // Public (unauthenticated) hosted-invoice fetch. No JWT needed.
+  getPublicInvoice: async (userId: string, invoiceId: string, sig: string): Promise<PublicInvoice> => {
+    const url = `${API_BASE_URL}/public/invoices/${userId}/${invoiceId}?sig=${encodeURIComponent(sig)}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    return response.json();
+  },
+
+  // Public PDF URL (open/download directly; no auth).
+  publicPdfUrl: (userId: string, invoiceId: string, sig: string) =>
+    `${API_BASE_URL}/public/invoices/${userId}/${invoiceId}/pdf?sig=${encodeURIComponent(sig)}`,
+
+  // Recurring schedules
+  getRecurring: () => fetchAPI<RecurringSchedule[]>(API_ENDPOINTS.recurring),
+
+  createRecurring: (data: Partial<RecurringSchedule>) =>
+    fetchAPI<RecurringSchedule>(API_ENDPOINTS.recurring, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateRecurring: (id: number, data: Partial<RecurringSchedule>) =>
+    fetchAPI<RecurringSchedule>(`${API_ENDPOINTS.recurring}/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteRecurring: (id: number) =>
+    fetchAPI<{ message: string }>(`${API_ENDPOINTS.recurring}/${id}`, {
+      method: 'DELETE',
+    }),
+
+  getRecurringReminders: () =>
+    fetchAPI<Invoice[]>(`${API_ENDPOINTS.recurring}/reminders`),
 
   // Analytics
   getMonthlyRevenue: (startDate?: string, endDate?: string) => {

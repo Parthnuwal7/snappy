@@ -1,7 +1,10 @@
-import { useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { api, Item } from '../api';
+import Pagination from '../components/Pagination';
 import { Plus, Search, Pencil, Trash2, X } from 'lucide-react';
+
+const PAGE_SIZE = 50;
 
 const EMPTY_FORM = {
   name: '',
@@ -24,23 +27,30 @@ export default function Items() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [formData, setFormData] = useState(EMPTY_FORM);
 
-  const { data: items, isLoading } = useQuery({
-    queryKey: ['items'],
-    queryFn: () => api.getItems(),
+  // Debounce the search box so we hit the server once typing settles.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 250);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // A new search resets to the first page of matches.
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
+
+  const { data: pageData, isLoading } = useQuery({
+    queryKey: ['items', 'paged', debouncedSearch, page],
+    queryFn: () => api.getItemsPaged({
+      page,
+      page_size: PAGE_SIZE,
+      search: debouncedSearch || undefined,
+    }),
+    placeholderData: keepPreviousData,
   });
 
-  const filteredItems = useMemo(() => {
-    if (!items) return [];
-    if (!searchQuery.trim()) return items;
-    const q = searchQuery.toLowerCase();
-    return items.filter((i) =>
-      i.name.toLowerCase().includes(q) ||
-      i.alias?.toLowerCase().includes(q) ||
-      i.description?.toLowerCase().includes(q)
-    );
-  }, [items, searchQuery]);
+  const items = pageData?.data ?? [];
 
   const createMutation = useMutation({
     mutationFn: api.createItem,
@@ -113,16 +123,16 @@ export default function Items() {
         />
         {searchQuery && (
           <span className="text-xs text-ink-muted tabular shrink-0 mr-2">
-            {filteredItems.length} match{filteredItems.length === 1 ? '' : 'es'}
+            {pageData?.total ?? 0} match{(pageData?.total ?? 0) === 1 ? '' : 'es'}
           </span>
         )}
       </div>
 
       {isLoading ? (
         <div className="card p-16 flex justify-center"><div className="spinner" /></div>
-      ) : filteredItems && filteredItems.length > 0 ? (
+      ) : items.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-rule border border-rule">
-          {filteredItems.map((item) => (
+          {items.map((item) => (
             <article key={item.id} className="bg-surface p-6 hover:bg-paper-deep/50 transition-colors group">
               <header className="flex items-start justify-between gap-3 mb-3">
                 <div className="min-w-0 flex-1">
@@ -176,6 +186,14 @@ export default function Items() {
             </article>
           ))}
         </div>
+      ) : debouncedSearch ? (
+        <div className="card p-16 text-center">
+          <div className="page-eyebrow">No matches</div>
+          <h2 className="section-title mt-2">No items match your search</h2>
+          <p className="text-base text-ink-muted mt-3">
+            Try a different name, alias, or description.
+          </p>
+        </div>
       ) : (
         <div className="card p-16 text-center">
           <div className="page-eyebrow">Empty catalog</div>
@@ -188,6 +206,16 @@ export default function Items() {
             <span>Add first item</span>
           </button>
         </div>
+      )}
+
+      {pageData && (
+        <Pagination
+          page={pageData.page}
+          totalPages={pageData.total_pages}
+          total={pageData.total}
+          pageSize={pageData.page_size}
+          onPageChange={setPage}
+        />
       )}
 
       {/* Modal */}

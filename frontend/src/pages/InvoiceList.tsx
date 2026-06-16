@@ -1,15 +1,20 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { api, Invoice, Client } from '../api';
 import InvoicePreview from '../components/InvoicePreview';
+import SendInvoiceDialog from '../components/SendInvoiceDialog';
+import Pagination from '../components/Pagination';
+import { useToast } from '../contexts/ToastContext';
 import {
   Plus, Search, ChevronDown, ChevronUp, ChevronsUpDown,
-  Eye, Pencil, Copy, Download, X,
+  Eye, Pencil, Copy, Download, X, Files, RefreshCw, Send, Link2, Check,
 } from 'lucide-react';
 
 type SortField = 'invoice_date' | 'client_name' | 'invoice_number' | 'total';
 type SortOrder = 'asc' | 'desc';
+
+const PAGE_SIZE = 50;
 
 const formatINR = (value: number) =>
   '₹' + value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -27,47 +32,44 @@ const statusPill: Record<string, string> = {
 export default function InvoiceList() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
   const [filters, setFilters] = useState({
     status: '', search: '', client_id: '', start_date: '', end_date: '',
   });
-  const [sortField, setSortField] = useState<SortField>('invoice_date');
+  const [sortField, setSortField] = useState<SortField>('invoice_number');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [page, setPage] = useState(1);
   const [statusMenuOpen, setStatusMenuOpen] = useState<number | null>(null);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [sendInvoice, setSendInvoice] = useState<Invoice | null>(null);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
 
-  const { data: invoices, isLoading } = useQuery({
-    queryKey: ['invoices', filters],
-    queryFn: () => api.getInvoices({
+  // Any change to filters or sort resets the view to the first page.
+  useEffect(() => { setPage(1); }, [filters, sortField, sortOrder]);
+
+  const { data: pageData, isLoading } = useQuery({
+    queryKey: ['invoices', filters, sortField, sortOrder, page],
+    queryFn: () => api.getInvoicesPaged({
+      page,
+      page_size: PAGE_SIZE,
       status: filters.status || undefined,
       search: filters.search || undefined,
       client_id: filters.client_id ? Number(filters.client_id) : undefined,
       start_date: filters.start_date || undefined,
       end_date: filters.end_date || undefined,
+      sort: sortField,
+      order: sortOrder,
     }),
+    placeholderData: keepPreviousData,
   });
+
+  const invoices = pageData?.data ?? [];
 
   const { data: clients } = useQuery({
     queryKey: ['clients'],
     queryFn: () => api.getClients(),
   });
-
-  const sortedInvoices = useMemo(() => {
-    if (!invoices) return [];
-    return [...invoices].sort((a, b) => {
-      let aV: any, bV: any;
-      switch (sortField) {
-        case 'invoice_date':   aV = new Date(a.invoice_date).getTime(); bV = new Date(b.invoice_date).getTime(); break;
-        case 'client_name':    aV = (a.client_name || '').toLowerCase(); bV = (b.client_name || '').toLowerCase(); break;
-        case 'invoice_number': aV = a.invoice_number; bV = b.invoice_number; break;
-        case 'total':          aV = a.total; bV = b.total; break;
-        default: return 0;
-      }
-      if (aV < bV) return sortOrder === 'asc' ? -1 : 1;
-      if (aV > bV) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [invoices, sortField, sortOrder]);
 
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) =>
@@ -103,13 +105,14 @@ export default function InvoiceList() {
       : <ChevronDown size={11} strokeWidth={2} className="text-oxblood" />;
   };
 
-  const handleGeneratePDF = async (id: number, invoiceNumber: string) => {
+  const handleGeneratePDF = async (id: number, invoiceNumber: string, layout: 'single' | 'two_up' = 'single') => {
     try {
-      const blob = await api.generatePDF(id);
+      const blob = await api.generatePDF(id, layout);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
+      const suffix = layout === 'two_up' ? '_2up' : '';
       a.href = url;
-      a.download = `SNAPPY_INV_${invoiceNumber.replace(/\//g, '_')}.pdf`;
+      a.download = `SNAPPY_INV_${invoiceNumber.replace(/\//g, '_')}${suffix}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -120,6 +123,19 @@ export default function InvoiceList() {
 
   const handleDuplicate = (id: number) => {
     if (confirm('Create a duplicate of this invoice?')) duplicateMutation.mutate(id);
+  };
+
+  const handleCopyLink = async (id: number) => {
+    try {
+      const { link } = await api.getInvoiceShareLink(id, window.location.origin);
+      await navigator.clipboard.writeText(link);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 2000);
+      showToast('Shareable link copied to clipboard');
+    } catch (e) {
+      console.error(e);
+      showToast('Failed to copy link', 'error');
+    }
   };
 
   const clearFilters = () => setFilters({ status: '', search: '', client_id: '', start_date: '', end_date: '' });
@@ -136,10 +152,16 @@ export default function InvoiceList() {
             Every invoice issued, in order. Filter, sort, mark paid, regenerate PDFs.
           </p>
         </div>
-        <Link to="/invoices/new" className="btn-primary">
-          <Plus size={14} strokeWidth={2} />
-          <span>New invoice</span>
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link to="/recurring" className="btn-secondary">
+            <RefreshCw size={14} strokeWidth={2} />
+            <span>Set up recurring</span>
+          </Link>
+          <Link to="/invoices/new" className="btn-primary">
+            <Plus size={14} strokeWidth={2} />
+            <span>New invoice</span>
+          </Link>
+        </div>
       </header>
 
       {/* Filters */}
@@ -225,7 +247,7 @@ export default function InvoiceList() {
       <div className="card overflow-hidden">
         {isLoading ? (
           <div className="p-16 flex justify-center"><div className="spinner" /></div>
-        ) : sortedInvoices && sortedInvoices.length > 0 ? (
+        ) : invoices.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="table-editorial">
               <thead>
@@ -248,7 +270,7 @@ export default function InvoiceList() {
                 </tr>
               </thead>
               <tbody>
-                {sortedInvoices.map((invoice) => (
+                {invoices.map((invoice) => (
                   <tr key={invoice.id}>
                     <td className="font-mono text-ink">{invoice.invoice_number}</td>
                     <td className="font-mono text-ink-muted tabular">{formatDate(invoice.invoice_date)}</td>
@@ -287,6 +309,11 @@ export default function InvoiceList() {
                           </>
                         )}
                       </div>
+                      {invoice.sent_at && (
+                        <div className="mt-1 text-2xs text-ink-faint tabular" title={`Sent ${formatDate(invoice.sent_at)}`}>
+                          Sent · {invoice.sent_channel === 'whatsapp' ? 'WhatsApp' : 'Email'}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div className="flex items-center justify-end gap-0.5">
@@ -300,6 +327,24 @@ export default function InvoiceList() {
                           title="Preview"
                         >
                           <Eye size={14} strokeWidth={1.5} />
+                        </button>
+                        <button
+                          onClick={() => setSendInvoice(invoice)}
+                          disabled={invoice.status === 'void'}
+                          className="p-1.5 text-ink-muted hover:text-oxblood hover:bg-oxblood-wash rounded-sm transition-colors disabled:opacity-40"
+                          title="Send to client"
+                        >
+                          <Send size={14} strokeWidth={1.5} />
+                        </button>
+                        <button
+                          onClick={() => handleCopyLink(invoice.id)}
+                          disabled={invoice.status === 'void'}
+                          className="p-1.5 text-ink-muted hover:text-ink hover:bg-paper-deep rounded-sm transition-colors disabled:opacity-40"
+                          title="Copy shareable link"
+                        >
+                          {copiedId === invoice.id
+                            ? <Check size={14} strokeWidth={1.75} className="text-oxblood" />
+                            : <Link2 size={14} strokeWidth={1.5} />}
                         </button>
                         <Link
                           to={`/invoices/${invoice.id}/edit`}
@@ -322,6 +367,13 @@ export default function InvoiceList() {
                           title="Download PDF"
                         >
                           <Download size={14} strokeWidth={1.5} />
+                        </button>
+                        <button
+                          onClick={() => handleGeneratePDF(invoice.id, invoice.invoice_number, 'two_up')}
+                          className="p-1.5 text-ink-muted hover:text-oxblood hover:bg-oxblood-wash rounded-sm transition-colors"
+                          title="Download 2-up (2 copies / page)"
+                        >
+                          <Files size={14} strokeWidth={1.5} />
                         </button>
                       </div>
                     </td>
@@ -351,10 +403,26 @@ export default function InvoiceList() {
         )}
       </div>
 
+      {pageData && (
+        <Pagination
+          page={pageData.page}
+          totalPages={pageData.total_pages}
+          total={pageData.total}
+          pageSize={pageData.page_size}
+          onPageChange={setPage}
+        />
+      )}
+
       <InvoicePreview
         invoice={previewInvoice}
         isOpen={isPreviewOpen}
         onClose={() => { setIsPreviewOpen(false); setPreviewInvoice(null); }}
+      />
+
+      <SendInvoiceDialog
+        invoice={sendInvoice}
+        isOpen={!!sendInvoice}
+        onClose={() => setSendInvoice(null)}
       />
     </div>
   );

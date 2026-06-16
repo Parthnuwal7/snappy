@@ -4,12 +4,20 @@ from app.models.models import db, Invoice, InvoiceItem, Client
 from app.models.auth import User, FirmDetails, BankAccount
 from app.services.pdf_templates import generate_pdf_with_template
 from app.middleware.jwt_auth import jwt_required
+from app.utils.pagination import pagination_requested, get_pagination_args, paginate_query
 from sqlalchemy.orm import joinedload
 from datetime import datetime, date
 import io
 import time
 
 bp = Blueprint('invoices', __name__)
+
+# Columns allowed for server-side sorting of the invoice register.
+INVOICE_SORT_COLUMNS = {
+    'invoice_number': Invoice.invoice_number,
+    'invoice_date': Invoice.invoice_date,
+    'total': Invoice.total,
+}
 
 # Cache for firm/bank details per user (50 minute TTL)
 _firm_cache = {}  # {user_id: (firm_dict, bank_dict, timestamp)}
@@ -111,10 +119,12 @@ def get_invoices():
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
     search = request.args.get('search')
-    
+    sort = request.args.get('sort', 'invoice_number')
+    order = request.args.get('order', 'desc')
+
     query = Invoice.query.filter_by(user_id=user.id)
-    
-    # Apply filters
+
+    # Apply filters (these span the whole dataset, independent of pagination)
     if client_id:
         query = query.filter_by(client_id=client_id)
     if status:
@@ -130,9 +140,22 @@ def get_invoices():
                 Invoice.short_desc.contains(search)
             )
         )
-    
-    invoices = query.order_by(Invoice.invoice_date.desc()).all()
-    return jsonify([inv.to_dict(include_items=False) for inv in invoices])
+
+    # Sorting — default is invoice number, descending.
+    if sort == 'client_name':
+        query = query.join(Client, Invoice.client_id == Client.id)
+        sort_col = Client.name
+    else:
+        sort_col = INVOICE_SORT_COLUMNS.get(sort, Invoice.invoice_number)
+    query = query.order_by(sort_col.asc() if order == 'asc' else sort_col.desc())
+
+    serialize = lambda inv: inv.to_dict(include_items=False)
+
+    if pagination_requested():
+        page, page_size = get_pagination_args()
+        return jsonify(paginate_query(query, page, page_size, serialize))
+
+    return jsonify([serialize(inv) for inv in query.all()])
 
 
 @bp.route('/invoices/<int:invoice_id>', methods=['GET'])
@@ -318,21 +341,119 @@ def generate_invoice_pdf(invoice_id):
         # Get firm details and bank account for PDF (from cache)
         firm, bank = get_cached_firm_bank(user)
         template_name = firm.default_template if firm else 'Simple'
-        
+        layout = request.args.get('layout', 'single')
+
         # Generate PDF
-        pdf_bytes = generate_pdf_with_template(invoice, firm, template_name, user_id=user.supabase_id, bank=bank)
-        
+        pdf_bytes = generate_pdf_with_template(
+            invoice, firm, template_name, user_id=user.supabase_id, bank=bank, layout=layout
+        )
+
         # Return PDF as downloadable file
+        suffix = '_2up' if layout == 'two_up' else ''
         return send_file(
             io.BytesIO(pdf_bytes),
             mimetype='application/pdf',
             as_attachment=True,
-            download_name=f"SNAPPY_INV_{invoice.invoice_number.replace('/', '_')}.pdf"
+            download_name=f"SNAPPY_INV_{invoice.invoice_number.replace('/', '_')}{suffix}.pdf"
         )
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({'error': f'Failed to generate PDF: {str(e)}'}), 500
+
+
+@bp.route('/invoices/<int:invoice_id>/send', methods=['POST'])
+@jwt_required
+def send_invoice_endpoint(invoice_id):
+    """Send an invoice to its client over email or WhatsApp.
+
+    Body: { channel: 'email'|'whatsapp', subject?, body? }
+      - email    -> renders + sends via the email transport, attaches the PDF.
+      - whatsapp -> returns a wa.me URL for the frontend to open.
+    Records sent_at/sent_channel and promotes draft -> sent on success.
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+
+    invoice = Invoice.query.options(
+        joinedload(Invoice.client),
+        joinedload(Invoice.items),
+    ).filter_by(id=invoice_id, user_id=user.id).first()
+    if not invoice:
+        return jsonify({'error': 'Invoice not found'}), 404
+
+    data = request.get_json() or {}
+    channel = data.get('channel')
+    if channel not in ('email', 'whatsapp'):
+        return jsonify({'error': "channel must be 'email' or 'whatsapp'"}), 400
+
+    # Fetch firm/bank bound to THIS request's session. The module-level
+    # get_cached_firm_bank() cache hands back detached ORM instances on later
+    # requests, which raise DetachedInstanceError on attribute access.
+    firm = user.firm_details
+    bank = BankAccount.query.filter_by(user_id=user.id, is_default=True).first()
+    currency = firm.currency if firm and firm.currency else 'INR'
+
+    # Only the email path needs a rendered PDF to attach.
+    pdf_bytes = None
+    if channel == 'email':
+        template_name = firm.default_template if firm else 'Simple'
+        try:
+            pdf_bytes = generate_pdf_with_template(
+                invoice, firm, template_name,
+                user_id=user.supabase_id, bank=bank, layout='single',
+            )
+        except Exception as e:
+            return jsonify({'error': f'Failed to render PDF: {e}'}), 500
+
+    from app.services.send_service import send_invoice, SendError
+    try:
+        result = send_invoice(
+            invoice, firm, invoice.client, channel,
+            pdf_bytes=pdf_bytes,
+            subject=data.get('subject'),
+            body=data.get('body'),
+            currency=currency,
+            # Frontend passes its own origin so links resolve in local & prod;
+            # build_link falls back to PUBLIC_BASE_URL when absent.
+            base_url=data.get('base_url'),
+        )
+    except SendError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Send failed: {e}'}), 502
+
+    db.session.commit()
+    result.update({
+        'status': invoice.status,
+        'sent_at': invoice.sent_at.isoformat() if invoice.sent_at else None,
+        'sent_channel': invoice.sent_channel,
+    })
+    return jsonify(result)
+
+
+@bp.route('/invoices/<int:invoice_id>/share_link', methods=['GET'])
+@jwt_required
+def invoice_share_link(invoice_id):
+    """Return a signed public link to the invoice (for copy/share).
+
+    `base_url` query param (the frontend origin) is prepended so the link works
+    in both local and production; falls back to PUBLIC_BASE_URL when omitted.
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({'error': 'User not found'}), 401
+
+    invoice = Invoice.query.filter_by(id=invoice_id, user_id=user.id).first()
+    if not invoice:
+        return jsonify({'error': 'Invoice not found'}), 404
+
+    from app.utils.invoice_links import build_link
+    link = build_link(user.id, invoice.id, base_url=request.args.get('base_url'))
+    return jsonify({'link': link})
 
 
 @bp.route('/invoices/<int:invoice_id>', methods=['DELETE'])

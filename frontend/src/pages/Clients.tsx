@@ -1,7 +1,10 @@
-import { useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { api, Client } from '../api';
+import Pagination from '../components/Pagination';
 import { Plus, Search, Mail, Phone, Building2, Pencil, Trash2, X } from 'lucide-react';
+
+const PAGE_SIZE = 50;
 
 const EMPTY_FORM = {
   name: '',
@@ -18,24 +21,30 @@ export default function Clients() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [formData, setFormData] = useState(EMPTY_FORM);
 
-  const { data: clients, isLoading } = useQuery({
-    queryKey: ['clients'],
-    queryFn: () => api.getClients(),
+  // Debounce the search box so we hit the server once typing settles.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 250);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // A new search resets to the first page of matches.
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
+
+  const { data: pageData, isLoading } = useQuery({
+    queryKey: ['clients', 'paged', debouncedSearch, page],
+    queryFn: () => api.getClientsPaged({
+      page,
+      page_size: PAGE_SIZE,
+      search: debouncedSearch || undefined,
+    }),
+    placeholderData: keepPreviousData,
   });
 
-  const filteredClients = useMemo(() => {
-    if (!clients) return [];
-    if (!searchQuery.trim()) return clients;
-    const q = searchQuery.toLowerCase();
-    return clients.filter((c) =>
-      c.name.toLowerCase().includes(q) ||
-      c.address?.toLowerCase().includes(q) ||
-      c.email?.toLowerCase().includes(q) ||
-      c.phone?.includes(q)
-    );
-  }, [clients, searchQuery]);
+  const clients = pageData?.data ?? [];
 
   const createMutation = useMutation({
     mutationFn: api.createClient,
@@ -110,7 +119,7 @@ export default function Clients() {
         />
         {searchQuery && (
           <span className="text-xs text-ink-muted tabular shrink-0 mr-2">
-            {filteredClients.length} match{filteredClients.length === 1 ? '' : 'es'}
+            {pageData?.total ?? 0} match{(pageData?.total ?? 0) === 1 ? '' : 'es'}
           </span>
         )}
       </div>
@@ -118,9 +127,9 @@ export default function Clients() {
       {/* Grid */}
       {isLoading ? (
         <div className="card p-16 flex justify-center"><div className="spinner" /></div>
-      ) : filteredClients && filteredClients.length > 0 ? (
+      ) : clients.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-rule border border-rule">
-          {filteredClients.map((client) => (
+          {clients.map((client) => (
             <article key={client.id} className="bg-surface p-6 hover:bg-paper-deep/50 transition-colors group">
               <header className="flex items-start justify-between gap-3 mb-4">
                 <h3 className="font-display text-xl text-ink leading-snug"
@@ -173,6 +182,14 @@ export default function Clients() {
             </article>
           ))}
         </div>
+      ) : debouncedSearch ? (
+        <div className="card p-16 text-center">
+          <div className="page-eyebrow">No matches</div>
+          <h2 className="section-title mt-2">No clients match your search</h2>
+          <p className="text-base text-ink-muted mt-3">
+            Try a different name, email, or phone number.
+          </p>
+        </div>
       ) : (
         <div className="card p-16 text-center">
           <div className="page-eyebrow">Empty register</div>
@@ -185,6 +202,16 @@ export default function Clients() {
             <span>Add first client</span>
           </button>
         </div>
+      )}
+
+      {pageData && (
+        <Pagination
+          page={pageData.page}
+          totalPages={pageData.total_pages}
+          total={pageData.total}
+          pageSize={pageData.page_size}
+          onPageChange={setPage}
+        />
       )}
 
       {/* Modal */}

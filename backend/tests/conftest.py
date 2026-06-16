@@ -1,4 +1,12 @@
 """Pytest configuration"""
+import os
+
+# Force the app to build against an in-memory SQLite DB for tests. Must be set
+# before importing app.main, because create_app() reads DATABASE_URL and opens
+# a connection at startup — without this, tests hang trying to reach prod Supabase.
+# load_dotenv(override=False) inside create_app won't clobber this value.
+os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
+
 import pytest
 from app.main import create_app
 from app.models.models import db as _db

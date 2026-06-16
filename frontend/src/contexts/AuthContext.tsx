@@ -12,7 +12,7 @@ interface UserProfile {
   updated_at: string;
 }
 
-interface Firm {
+export interface Firm {
   id: string;
   user_id: string;
   firm_name: string;
@@ -31,6 +31,9 @@ interface Firm {
   upi_qr_path?: string;
   terms_and_conditions?: string;
   billing_terms?: string;
+  email_subject_template?: string;
+  email_body_template?: string;
+  whatsapp_template?: string;
   default_template: string;
   invoice_prefix: string;
   use_invoice_prefix?: boolean;

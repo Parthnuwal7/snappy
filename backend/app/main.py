@@ -9,7 +9,7 @@ from datetime import timedelta
 import os
 
 from app.models.models import db, init_db, Keepalive
-from app.api import invoices, clients, analytics, import_csv, backup, auth, admin, items, storage
+from app.api import invoices, clients, analytics, import_csv, backup, auth, admin, items, storage, recurring, public
 
 # Load environment variables
 load_dotenv()
@@ -57,6 +57,7 @@ def create_app():
         # Import all models to ensure tables are created
         from app.models.auth import User, Firm
         from app.models.models import Item  # Ensure items table is created
+        from app.models.models import RecurringSchedule  # ensure table is created
         db.create_all()
     
     # Register blueprints with API versioning (v1)
@@ -70,6 +71,8 @@ def create_app():
     app.register_blueprint(backup.bp, url_prefix='/api/v1')
     app.register_blueprint(items.bp, url_prefix='/api/v1')
     app.register_blueprint(storage.bp, url_prefix='/api/v1/storage')
+    app.register_blueprint(recurring.bp, url_prefix='/api/v1')
+    app.register_blueprint(public.bp, url_prefix='/api/v1')
     
     @app.route('/health')
     def health():

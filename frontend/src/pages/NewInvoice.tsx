@@ -79,6 +79,12 @@ export default function NewInvoice() {
     enabled: debouncedSearch.length >= 3,
   });
 
+  const { data: recentClients } = useQuery({
+    queryKey: ['clients', 'recent'],
+    queryFn: () => api.getRecentClients(6),
+    enabled: !id,  // only when composing a brand-new invoice
+  });
+
   const createMutation = useMutation({
     mutationFn: api.createInvoice,
     onSuccess: () => {
@@ -161,6 +167,30 @@ export default function NewInvoice() {
             </div>
           ) : (
             <div>
+              {clientSearch.length === 0 && recentClients && recentClients.length > 0 && (
+                <div className="mb-4">
+                  <div className="eyebrow mb-2">Recent clients</div>
+                  <div className="flex flex-wrap gap-2">
+                    {recentClients.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedClient(c);
+                          setValue('client_id', c.id);
+                          setValue('tax_rate', c.default_tax_rate);
+                          setClientSearch('');
+                        }}
+                        className="px-3 py-1.5 text-sm border border-rule rounded-DEFAULT
+                                   text-ink-soft hover:border-oxblood hover:text-oxblood
+                                   bg-surface transition-colors"
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <label className="field-label">Search client (min 3 characters) *</label>
               <div className="relative">
                 <Search size={14} strokeWidth={1.5}

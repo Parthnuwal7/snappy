@@ -2,7 +2,8 @@
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, Frame, KeepInFrame
+from reportlab.pdfgen import canvas
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_RIGHT, TA_CENTER, TA_LEFT
 from io import BytesIO
@@ -389,11 +390,12 @@ def generate_pdf_law_001(invoice, firm):
     return pdf_bytes
 
 
-def generate_pdf_half_page(invoice, firm, user_id=None, bank=None, shell_data=None):
-    """
-    Generate HALF_PAGE template PDF - Compact horizontal layout (A5-like on A4)
-    Based on the reference image with logo, bank details, QR, signature
-    
+def build_halfpage_elements(invoice, firm, user_id=None, bank=None, shell_data=None):
+    """Build the ReportLab flowables for the HALF_PAGE invoice layout.
+
+    Returns a fresh list of flowables each call (flowables cannot be reused
+    across frames/documents, so callers needing two copies call this twice).
+
     Args:
         invoice: Invoice model
         firm: FirmDetails model
@@ -402,11 +404,7 @@ def generate_pdf_half_page(invoice, firm, user_id=None, bank=None, shell_data=No
         shell_data: Pre-cached static elements (firm info, images) for faster generation
     """
     from datetime import datetime
-    
-    buffer = BytesIO()
-    # Use A4 but content designed for half page
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20)
-    
+
     elements = []
     styles = getSampleStyleSheet()
     
@@ -711,13 +709,53 @@ Account holder's name : {account_holder or 'N/A'}"""
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
     ]))
     elements.append(footer_table)
-    
-    # Build PDF
+
+    return elements
+
+
+def generate_pdf_half_page(invoice, firm, user_id=None, bank=None, shell_data=None):
+    """Generate HALF_PAGE template PDF - Compact horizontal layout (A5-like on A4)."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=20, leftMargin=20,
+                            topMargin=20, bottomMargin=20)
+    elements = build_halfpage_elements(invoice, firm, user_id=user_id, bank=bank,
+                                       shell_data=shell_data)
     doc.build(elements)
-    
     pdf_bytes = buffer.getvalue()
     buffer.close()
-    
+    return pdf_bytes
+
+
+def generate_pdf_half_page_two_up(invoice, firm, user_id=None, bank=None, shell_data=None):
+    """Two identical upright copies of the half-page invoice on one A4 page.
+
+    Top copy occupies the upper half, bottom copy the lower half. Each copy is
+    wrapped in a shrink-to-fit frame so a slightly tall invoice scales down
+    rather than clipping at the tear line.
+    """
+    buffer = BytesIO()
+    width, height = A4
+    c = canvas.Canvas(buffer, pagesize=A4)
+    margin = 20
+    half = height / 2.0
+    gutter = 10  # breathing room either side of the tear line
+
+    frames = [
+        Frame(margin, half + gutter / 2.0, width - 2 * margin, half - margin - gutter / 2.0,
+              leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0, showBoundary=0),
+        Frame(margin, margin, width - 2 * margin, half - margin - gutter / 2.0,
+              leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0, showBoundary=0),
+    ]
+    for fr in frames:
+        elements = build_halfpage_elements(invoice, firm, user_id=user_id, bank=bank,
+                                           shell_data=shell_data)
+        story = KeepInFrame(fr._width, fr._height, elements, mode='shrink')
+        fr.addFromList([story], c)
+
+    c.showPage()
+    c.save()
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
     return pdf_bytes
 
 
@@ -729,21 +767,30 @@ TEMPLATES = {
 }
 
 
-def generate_pdf_with_template(invoice, firm, template_name=None, user_id=None, bank=None):
+def generate_pdf_with_template(invoice, firm, template_name=None, user_id=None, bank=None,
+                               layout='single'):
     """Generate PDF using specified template with cached static elements
-    
+
     Args:
         invoice: Invoice model
         firm: FirmDetails model (or Firm for backwards compatibility)
         template_name: Template name to use
         user_id: Supabase user ID for fetching images
         bank: BankAccount model (optional, for bank details)
+        layout: 'single' (default) or 'two_up'. 'two_up' forces the half-page
+            layout rendered twice on one A4 page, regardless of template_name
+            (two-up only makes sense for the compact layout).
     """
+    if layout == 'two_up':
+        shell_data = get_template_shell(user_id, 'HALF_PAGE', firm, bank) if user_id else None
+        return generate_pdf_half_page_two_up(invoice, firm, user_id=user_id, bank=bank,
+                                             shell_data=shell_data)
+
     if not template_name:
         template_name = firm.default_template if firm else 'Simple'
-    
+
     generator = TEMPLATES.get(template_name, generate_pdf_simple)
-    
+
     # Use template shell cache for HALF_PAGE template
     if template_name == 'HALF_PAGE' and user_id:
         # Get cached template shell (static elements)

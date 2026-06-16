@@ -1,9 +1,11 @@
 """Client API endpoints - multi-tenant"""
 from flask import Blueprint, request, jsonify, g
-from app.models.models import db, Client
+from app.models.models import db, Client, Invoice
 from app.models.auth import User
 from app.middleware.jwt_auth import jwt_required
+from app.utils.pagination import pagination_requested, get_pagination_args, paginate_query
 from rapidfuzz import fuzz, process
+from sqlalchemy import func
 
 bp = Blueprint('clients', __name__)
 
@@ -26,7 +28,27 @@ def get_clients():
         return jsonify({'error': 'User not found'}), 401
     
     search = request.args.get('search', '')
-    
+
+    # Paginated mode (list page): SQL substring filter across all fields, then page.
+    # Search spans every client, irrespective of which page is shown.
+    if pagination_requested():
+        query = Client.query.filter_by(user_id=user_id)
+        term = search.strip()
+        if term:
+            like = f"%{term}%"
+            query = query.filter(
+                db.or_(
+                    Client.name.ilike(like),
+                    Client.email.ilike(like),
+                    Client.phone.ilike(like),
+                    Client.address.ilike(like),
+                    Client.tax_id.ilike(like),
+                )
+            )
+        query = query.order_by(Client.name)
+        page, page_size = get_pagination_args()
+        return jsonify(paginate_query(query, page, page_size, lambda c: c.to_dict()))
+
     if search and len(search) >= 2:  # Minimum 2 chars for search
         # Fuzzy search clients for this user
         all_clients = Client.query.filter_by(user_id=user_id).all()
@@ -50,6 +72,34 @@ def get_clients():
         clients = Client.query.filter_by(user_id=user_id).order_by(Client.name).all()
     
     return jsonify([client.to_dict() for client in clients])
+
+
+def recent_clients_for_user(user_id, limit=6):
+    """Return the user's clients ordered by most recent invoice, capped at limit.
+
+    Clients with no invoices are excluded. Returns a list of client dicts.
+    """
+    rows = (
+        db.session.query(Client)
+        .join(Invoice, Invoice.client_id == Client.id)
+        .filter(Client.user_id == user_id)
+        .group_by(Client.id)
+        .order_by(func.max(Invoice.invoice_date).desc())
+        .limit(limit)
+        .all()
+    )
+    return [c.to_dict() for c in rows]
+
+
+@bp.route('/clients/recent', methods=['GET'])
+@jwt_required
+def get_recent_clients():
+    """Get the current user's most-recently-billed clients."""
+    user_id = get_current_user_id()
+    if not user_id:
+        return jsonify({'error': 'User not found'}), 401
+    limit = request.args.get('limit', default=6, type=int)
+    return jsonify(recent_clients_for_user(user_id, limit=limit))
 
 
 @bp.route('/clients/<int:client_id>', methods=['GET'])

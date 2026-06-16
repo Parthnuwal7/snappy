@@ -1,6 +1,7 @@
 """Authentication models - User, FirmDetails, BankAccount"""
 from app.models.models import db, _money
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import String
 from datetime import datetime
 import json
 
@@ -12,7 +13,9 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     # Postgres column is uuid; as_uuid=False keeps Python-side values as plain strings
     # so JSON serialization, JWT sub comparisons, and frontend payloads all line up.
-    supabase_id = db.Column(UUID(as_uuid=False), unique=True)
+    # UUID on Postgres (prod); plain string on SQLite so the test suite can run
+    # against an in-memory DB without a Postgres-only type failing to compile.
+    supabase_id = db.Column(UUID(as_uuid=False).with_variant(String(36), 'sqlite'), unique=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256))
     is_active = db.Column(db.Boolean, default=True)
@@ -77,6 +80,11 @@ class FirmDetails(db.Model):
     # Terms
     terms_and_conditions = db.Column(db.Text)
     billing_terms = db.Column(db.Text)
+
+    # Message templates for invoice sending (null -> built-in defaults)
+    email_subject_template = db.Column(db.Text)
+    email_body_template = db.Column(db.Text)
+    whatsapp_template = db.Column(db.Text)
     
     # Preferences
     default_template = db.Column(db.String(50), default='Simple')
@@ -106,6 +114,9 @@ class FirmDetails(db.Model):
             'signature_path': self.signature_path,
             'terms_and_conditions': self.terms_and_conditions,
             'billing_terms': self.billing_terms,
+            'email_subject_template': self.email_subject_template,
+            'email_body_template': self.email_body_template,
+            'whatsapp_template': self.whatsapp_template,
             'default_template': self.default_template,
             'invoice_prefix': self.invoice_prefix,
             'use_invoice_prefix': self.use_invoice_prefix if self.use_invoice_prefix is not None else True,

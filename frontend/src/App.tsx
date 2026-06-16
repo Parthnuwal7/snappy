@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
@@ -15,6 +16,8 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Onboarding from './pages/Onboarding';
 import Items from './pages/Items';
+import Recurring from './pages/Recurring';
+import PublicInvoice from './pages/PublicInvoice';
 
 function App() {
   // Keyboard shortcuts
@@ -38,8 +41,10 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <Routes>
+        <ToastProvider>
+          <Routes>
           {/* Public Routes */}
+          <Route path="/i/:userId/:invoiceId/:sig" element={<PublicInvoice />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -66,13 +71,15 @@ function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="invoices" element={<InvoiceList />} />
             <Route path="invoices/new" element={<NewInvoice />} />
+            <Route path="recurring" element={<Recurring />} />
             <Route path="invoices/:id/edit" element={<NewInvoice />} />
             <Route path="clients" element={<Clients />} />
             <Route path="items" element={<Items />} />
             <Route path="reports" element={<Reports />} />
             <Route path="settings" element={<Settings />} />
-          </Route>
-        </Routes>
+            </Route>
+          </Routes>
+        </ToastProvider>
       </AuthProvider>
     </Router>
   );

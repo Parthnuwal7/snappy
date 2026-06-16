@@ -3,6 +3,7 @@ from flask import Blueprint, request, jsonify, g
 from app.models.models import db, Item
 from app.models.auth import User
 from app.middleware.jwt_auth import jwt_required
+from app.utils.pagination import pagination_requested, get_pagination_args, paginate_query
 from rapidfuzz import fuzz, process
 
 bp = Blueprint('items', __name__)
@@ -27,12 +28,29 @@ def get_items():
     
     search = request.args.get('search', '')
     active_only = request.args.get('active', 'true').lower() == 'true'
-    
+
     query = Item.query.filter_by(user_id=user_id)
-    
+
     if active_only:
         query = query.filter_by(is_active=True)
-    
+
+    # Paginated mode (list page): SQL substring filter across all fields, then page.
+    # Search spans every item, irrespective of which page is shown.
+    if pagination_requested():
+        term = search.strip()
+        if term:
+            like = f"%{term}%"
+            query = query.filter(
+                db.or_(
+                    Item.name.ilike(like),
+                    Item.alias.ilike(like),
+                    Item.description.ilike(like),
+                )
+            )
+        query = query.order_by(Item.name)
+        page, page_size = get_pagination_args()
+        return jsonify(paginate_query(query, page, page_size, lambda i: i.to_dict()))
+
     if search:
         # Fuzzy search on name and alias
         all_items = query.all()

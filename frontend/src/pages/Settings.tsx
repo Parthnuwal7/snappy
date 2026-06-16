@@ -5,7 +5,11 @@ import { api } from '../api';
 import ImageUpload from '../components/ImageUpload';
 import { Download, Trash2, X } from 'lucide-react';
 
-type Tab = 'account' | 'preferences';
+import {
+  DEFAULT_EMAIL_SUBJECT, DEFAULT_EMAIL_BODY, DEFAULT_WHATSAPP, PLACEHOLDERS,
+} from '../lib/messageTemplates';
+
+type Tab = 'account' | 'preferences' | 'messages';
 
 export default function Settings() {
   const { firm, refreshProfile } = useAuth();
@@ -42,6 +46,12 @@ export default function Settings() {
     show_due_date: true,
   });
 
+  const [messagesData, setMessagesData] = useState({
+    email_subject_template: '',
+    email_body_template: '',
+    whatsapp_template: '',
+  });
+
   useEffect(() => {
     if (firm) {
       setAccountData({
@@ -66,6 +76,12 @@ export default function Settings() {
         default_tax_rate: firm.default_tax_rate ?? 18.0,
         currency: firm.currency || 'INR',
         show_due_date: firm.show_due_date ?? true,
+      });
+
+      setMessagesData({
+        email_subject_template: firm.email_subject_template || '',
+        email_body_template: firm.email_body_template || '',
+        whatsapp_template: firm.whatsapp_template || '',
       });
     }
   }, [firm]);
@@ -93,6 +109,25 @@ export default function Settings() {
       setMessage({ type: 'success', text: 'Preferences updated.' });
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Failed to update preferences' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleMessagesSave = async () => {
+    setIsLoading(true);
+    setMessage(null);
+    try {
+      // Send empty strings as null so the backend falls back to built-in defaults.
+      await api.updateFirm({
+        email_subject_template: messagesData.email_subject_template || null,
+        email_body_template: messagesData.email_body_template || null,
+        whatsapp_template: messagesData.whatsapp_template || null,
+      });
+      try { await refreshProfile(); } catch (err) { console.error(err); }
+      setMessage({ type: 'success', text: 'Message templates updated.' });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Failed to update templates' });
     } finally {
       setIsLoading(false);
     }
@@ -166,7 +201,7 @@ export default function Settings() {
       {/* Tabs */}
       <div className="border-b border-rule mb-8">
         <nav className="flex gap-8 -mb-px">
-          {(['account', 'preferences'] as Tab[]).map((tab) => (
+          {(['account', 'preferences', 'messages'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -177,7 +212,7 @@ export default function Settings() {
                   : 'border-transparent text-ink-muted hover:text-ink',
               ].join(' ')}
             >
-              {tab === 'account' ? 'Account details' : 'Preferences'}
+              {tab === 'account' ? 'Account details' : tab === 'preferences' ? 'Preferences' : 'Messages'}
             </button>
           ))}
         </nav>
@@ -457,6 +492,66 @@ export default function Settings() {
           <div className="flex justify-end">
             <button onClick={handlePreferencesSave} disabled={isLoading} className="btn-primary">
               {isLoading ? 'Saving…' : 'Save preferences'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Messages tab */}
+      {activeTab === 'messages' && (
+        <div className="card p-8 space-y-6">
+          <div className="mb-2">
+            <div className="page-eyebrow">Sending</div>
+            <h2 className="section-title mt-1">Message templates</h2>
+            <p className="text-sm text-ink-muted mt-2 max-w-prose">
+              Used when you send an invoice by email or WhatsApp. Leave a field blank to use the
+              built-in default. You can still tweak each message before sending.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {PLACEHOLDERS.map((p) => (
+                <code key={p} className="text-2xs font-mono text-oxblood bg-oxblood-wash px-1.5 py-0.5 rounded-sm">
+                  {`{${p}}`}
+                </code>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="field-label">Email subject</label>
+            <input
+              type="text"
+              value={messagesData.email_subject_template}
+              onChange={(e) => setMessagesData({ ...messagesData, email_subject_template: e.target.value })}
+              placeholder={DEFAULT_EMAIL_SUBJECT}
+              className="field-input font-mono text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="field-label">Email body</label>
+            <textarea
+              value={messagesData.email_body_template}
+              onChange={(e) => setMessagesData({ ...messagesData, email_body_template: e.target.value })}
+              placeholder={DEFAULT_EMAIL_BODY}
+              rows={8}
+              className="field-textarea font-mono text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="field-label">WhatsApp message</label>
+            <textarea
+              value={messagesData.whatsapp_template}
+              onChange={(e) => setMessagesData({ ...messagesData, whatsapp_template: e.target.value })}
+              placeholder={DEFAULT_WHATSAPP}
+              rows={4}
+              className="field-textarea font-mono text-xs"
+            />
+          </div>
+
+          <div className="flex justify-end">
+            <button onClick={handleMessagesSave} disabled={isLoading} className="btn-primary">
+              {isLoading ? 'Saving…' : 'Save templates'}
             </button>
           </div>
         </div>
