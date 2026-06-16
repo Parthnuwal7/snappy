@@ -1,0 +1,29 @@
+# Keep the Cloud Build context small and never ship secrets/local state.
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Local secrets & databases — must never be baked into the image.
+.env
+.env.*
+*.db
+*.duckdb
+*.sqlite
+
+# Tests and dev-only scripts aren't needed in the runtime image.
+tests/
+_fix_dburl.py
+
+# Local backups / artifacts.
+backups/
+*.log
+
+# VCS / editor noise.
+.git/
+.gitignore
+.idea/
+.vscode/
