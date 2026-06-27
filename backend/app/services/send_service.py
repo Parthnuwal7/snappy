@@ -30,13 +30,13 @@ def build_whatsapp_url(phone_e164, text):
 
 def send_invoice(invoice, firm, client, channel, *, pdf_bytes=None,
                  subject=None, body=None, transport=None, base_url=None,
-                 currency='INR'):
+                 currency='INR', cc=None):
     """Send `invoice` to `client` over `channel`.
 
     Returns a dict describing the result. For 'whatsapp' it includes
     `whatsapp_url` for the frontend to open. Caller commits the DB session.
     """
-    link = build_link(invoice.user_id, invoice.id, base_url=base_url)
+    link = build_link(invoice.created_by_user_id, invoice.id, base_url=base_url)
     context = mt.build_context(invoice, firm, client, link, currency=currency)
 
     if channel == 'email':
@@ -53,6 +53,9 @@ def send_invoice(invoice, firm, client, channel, *, pdf_bytes=None,
             transport = get_transport()
 
         pdf_name = f"Invoice_{invoice.invoice_number.replace('/', '_')}.pdf"
+        # CC the firm so it stays looped in; skip when missing or it duplicates
+        # the recipient.
+        safe_cc = cc if (cc and cc != client.email) else None
         transport.send(
             to=client.email,
             subject=subject,
@@ -61,6 +64,7 @@ def send_invoice(invoice, firm, client, channel, *, pdf_bytes=None,
             pdf_name=pdf_name,
             from_name=getattr(firm, 'firm_name', None) if firm else None,
             reply_to=getattr(firm, 'firm_email', None) if firm else None,
+            cc=safe_cc,
         )
         _record_sent(invoice, 'email')
         return {'channel': 'email', 'sent_to': client.email}

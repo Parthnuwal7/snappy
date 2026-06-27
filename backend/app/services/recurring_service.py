@@ -44,8 +44,9 @@ def run_due_schedules(session, today=None):
             continue
 
         invoice = Invoice(
-            user_id=sched.user_id,
-            invoice_number=generate_invoice_number(sched.user_id),
+            firm_id=sched.firm_id,
+            created_by_user_id=sched.created_by_user_id,
+            invoice_number=generate_invoice_number(sched.firm_id),
             client_id=sched.client_id,
             invoice_date=today,
             due_date=None,

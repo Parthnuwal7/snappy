@@ -51,14 +51,14 @@ def get_monthly_revenue():
                    SUM(total)                     AS revenue,
                    COUNT(*)                       AS invoice_count
             FROM invoices
-            WHERE user_id = :user_id
+            WHERE firm_id = :firm_id
               AND status <> 'void'
               AND invoice_date >= :start_date
               AND invoice_date <= :end_date
             GROUP BY month
             ORDER BY month
         """), {
-            'user_id': user.id,
+            'firm_id': user.firm_id,
             'start_date': start_date,
             'end_date': end_date,
         }).fetchall()
@@ -88,12 +88,12 @@ def get_top_clients():
                    AVG(i.total)  AS avg_invoice
             FROM invoices i
             JOIN clients c ON c.id = i.client_id
-            WHERE i.user_id = :user_id
+            WHERE i.firm_id = :firm_id
               AND i.status <> 'void'
             GROUP BY c.name
             ORDER BY total_revenue DESC
             LIMIT :limit
-        """), {'user_id': user.id, 'limit': limit}).fetchall()
+        """), {'firm_id': user.firm_id, 'limit': limit}).fetchall()
 
         return jsonify([
             {
@@ -126,10 +126,10 @@ def get_aging_analysis():
                                 THEN total ELSE 0 END), 0) AS bucket_61_plus,
               COUNT(*)                                    AS total_unpaid
             FROM invoices
-            WHERE user_id = :user_id
+            WHERE firm_id = :firm_id
               AND status IN ('draft', 'sent')
               AND due_date IS NOT NULL
-        """), {'user_id': user.id}).fetchone()
+        """), {'firm_id': user.firm_id}).fetchone()
 
         return jsonify({
             'bucket_0_30':    _num(row.bucket_0_30),

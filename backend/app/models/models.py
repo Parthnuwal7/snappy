@@ -22,7 +22,10 @@ class Client(db.Model):
     __tablename__ = 'clients'
     
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    # firm_id is the access scope; created_by_user_id is attribution (renamed from
+    # user_id by migration 008). Nullable during transition so create_all/backfill work.
+    firm_id = db.Column(db.Integer, db.ForeignKey('firms.id'), index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), index=True)
     name = db.Column(db.String(200), nullable=False, index=True)
     email = db.Column(db.String(200))
     phone = db.Column(db.String(50))
@@ -40,7 +43,8 @@ class Client(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
-            'user_id': self.user_id,
+            'firm_id': self.firm_id,
+            'created_by_user_id': self.created_by_user_id,
             'name': self.name,
             'email': self.email,
             'phone': self.phone,
@@ -58,7 +62,8 @@ class Item(db.Model):
     __tablename__ = 'items'
     
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    firm_id = db.Column(db.Integer, db.ForeignKey('firms.id'), index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), index=True)
     name = db.Column(db.String(200), nullable=False, index=True)
     alias = db.Column(db.String(100), index=True)
     description = db.Column(db.Text)
@@ -75,7 +80,8 @@ class Item(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
-            'user_id': self.user_id,
+            'firm_id': self.firm_id,
+            'created_by_user_id': self.created_by_user_id,
             'name': self.name,
             'alias': self.alias,
             'description': self.description,
@@ -93,9 +99,12 @@ class Invoice(db.Model):
     __tablename__ = 'invoices'
     
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    firm_id = db.Column(db.Integer, db.ForeignKey('firms.id'), index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), index=True)
     invoice_number = db.Column(db.String(50), nullable=False, index=True)
     client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False)
+    # Optional link to a case file (CRM spine); blank preserves standalone billing.
+    case_file_id = db.Column(db.Integer, db.ForeignKey('case_files.id'), index=True)
     invoice_date = db.Column(db.Date, nullable=False, default=datetime.utcnow().date)
     due_date = db.Column(db.Date)
     short_desc = db.Column(db.Text)
@@ -122,9 +131,9 @@ class Invoice(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Match the live DB constraint applied in migration 002 — one invoice number per user.
+    # One invoice number per firm (migration 008 swaps the old per-user constraint).
     __table_args__ = (
-        db.UniqueConstraint('user_id', 'invoice_number', name='invoices_user_id_invoice_number_key'),
+        db.UniqueConstraint('firm_id', 'invoice_number', name='invoices_firm_id_invoice_number_key'),
     )
 
     # Relationships
@@ -141,9 +150,11 @@ class Invoice(db.Model):
     def to_dict(self, include_items=False):
         result = {
             'id': self.id,
-            'user_id': self.user_id,
+            'firm_id': self.firm_id,
+            'created_by_user_id': self.created_by_user_id,
             'invoice_number': self.invoice_number,
             'client_id': self.client_id,
+            'case_file_id': self.case_file_id,
             'client_name': self.client.name if self.client else None,
             'invoice_date': self.invoice_date.isoformat() if self.invoice_date else None,
             'due_date': self.due_date.isoformat() if self.due_date else None,
@@ -196,7 +207,8 @@ class RecurringSchedule(db.Model):
     __tablename__ = 'recurring_schedules'
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    firm_id = db.Column(db.Integer, db.ForeignKey('firms.id'), index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), index=True)
     client_id = db.Column(db.Integer, db.ForeignKey('clients.id'), nullable=False)
     title = db.Column(db.String(200))
     items = db.Column(db.JSON, nullable=False, default=list)
@@ -217,7 +229,8 @@ class RecurringSchedule(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
-            'user_id': self.user_id,
+            'firm_id': self.firm_id,
+            'created_by_user_id': self.created_by_user_id,
             'client_id': self.client_id,
             'client_name': self.client.name if self.client else None,
             'title': self.title,
@@ -254,6 +267,152 @@ class Keepalive(db.Model):
             'id': self.id,
             'pinged_at': self.pinged_at.isoformat() if self.pinged_at else None,
             'source': self.source,
+        }
+
+
+class LegalFeedSource(db.Model):
+    """A feed the ingestion pipeline polls. Config-driven source registry."""
+    __tablename__ = 'legal_feed_sources'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    content_type = db.Column(db.String(20), nullable=False)  # judgement|news|notice
+    court = db.Column(db.String(100))
+    kind = db.Column(db.String(20), nullable=False, default='rss')  # rss|scrape
+    feed_url = db.Column(db.String(500), nullable=False, unique=True)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    weight = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'name': self.name, 'content_type': self.content_type,
+            'court': self.court, 'kind': self.kind, 'feed_url': self.feed_url,
+            'enabled': self.enabled, 'weight': self.weight,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class LegalFeedItem(db.Model):
+    """A single feed entry: headline + summary + link-out. No full text."""
+    __tablename__ = 'legal_feed_items'
+
+    id = db.Column(db.Integer, primary_key=True)
+    source_id = db.Column(db.Integer, db.ForeignKey('legal_feed_sources.id'), index=True)
+    content_type = db.Column(db.String(20), nullable=False, index=True)
+    title = db.Column(db.Text, nullable=False)
+    summary = db.Column(db.Text)
+    source_url = db.Column(db.String(1000), nullable=False)
+    source_name = db.Column(db.String(200), nullable=False)
+    court = db.Column(db.String(100), index=True)
+    published_at = db.Column(db.DateTime, index=True)
+    ingested_at = db.Column(db.DateTime, default=datetime.utcnow)
+    hidden = db.Column(db.Boolean, nullable=False, default=False)
+    dedup_key = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    # Enrichment (best-effort; NULL enriched_at means "not yet enriched")
+    headline = db.Column(db.Text)        # punchy rewrite, news only
+    tldr = db.Column(db.Text)            # "why it matters", news only
+    topics = db.Column(db.JSON)          # subset of taxonomy
+    importance = db.Column(db.Integer)   # 0-100
+    image_url = db.Column(db.String(1000))
+    embedding = db.Column(db.JSON)       # list[float]
+    embed_model = db.Column(db.String(80))
+    enriched_at = db.Column(db.DateTime)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'content_type': self.content_type, 'title': self.title,
+            'summary': self.summary, 'source_url': self.source_url,
+            'source_name': self.source_name, 'court': self.court,
+            'published_at': self.published_at.isoformat() if self.published_at else None,
+            'ingested_at': self.ingested_at.isoformat() if self.ingested_at else None,
+            'hidden': self.hidden,
+            'headline': self.headline, 'tldr': self.tldr,
+            'topics': self.topics or [], 'importance': self.importance,
+            'image_url': self.image_url,
+            'enriched_at': self.enriched_at.isoformat() if self.enriched_at else None,
+        }
+
+
+class LegalFeedRun(db.Model):
+    """Audit log of one ingestion run, for the admin status view."""
+    __tablename__ = 'legal_feed_runs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    finished_at = db.Column(db.DateTime)
+    trigger = db.Column(db.String(20), nullable=False)  # scheduled|manual
+    status = db.Column(db.String(20), nullable=False, default='success')
+    total_ingested = db.Column(db.Integer, nullable=False, default=0)
+    results = db.Column(db.JSON, default=list)  # [{source_id, fetched, inserted, error}]
+    enriched = db.Column(db.Integer, nullable=False, default=0)
+    enrich_failed = db.Column(db.Integer, nullable=False, default=0)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'finished_at': self.finished_at.isoformat() if self.finished_at else None,
+            'trigger': self.trigger, 'status': self.status,
+            'total_ingested': self.total_ingested, 'results': self.results or [],
+            'enriched': self.enriched or 0, 'enrich_failed': self.enrich_failed or 0,
+        }
+
+
+class LegalFeedSetting(db.Model):
+    """Singleton (id=1) holding the global feed ordering mode."""
+    __tablename__ = 'legal_feed_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    ordering_mode = db.Column(db.String(20), nullable=False, default='recency')  # recency|weighted
+
+    def to_dict(self):
+        return {'id': self.id, 'ordering_mode': self.ordering_mode}
+
+
+class LegalFeedPreference(db.Model):
+    """Per-user feed personalization: macro taxonomy weights + micro interest
+    embedding (seeded from free-text phrases). Server-synced (cross-device)."""
+    __tablename__ = 'legal_feed_preferences'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False, unique=True, index=True)
+    topic_weights = db.Column(db.JSON, default=dict)   # {topic: weight}
+    courts = db.Column(db.JSON, default=list)          # [court]
+    interest_phrases = db.Column(db.JSON, default=list)
+    interest_embedding = db.Column(db.JSON)            # list[float]
+    embed_model = db.Column(db.String(80))
+    behavior_embedding = db.Column(db.JSON)            # learned interest vector
+    behavior_updated_at = db.Column(db.DateTime)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'user_id': self.user_id,
+            'topic_weights': self.topic_weights or {},
+            'courts': self.courts or [],
+            'interest_phrases': self.interest_phrases or [],
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class LegalFeedEvent(db.Model):
+    """User engagement with a feed item — the source of truth for behavioral
+    personalization. kind: 'click' (positive) | 'not_interested' (negative)."""
+    __tablename__ = 'legal_feed_events'
+    __table_args__ = (db.Index('ix_lfe_user_kind', 'user_id', 'kind'),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False, index=True)
+    item_id = db.Column(db.Integer, db.ForeignKey('legal_feed_items.id'), index=True)
+    kind = db.Column(db.String(20), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'user_id': self.user_id, 'item_id': self.item_id,
+            'kind': self.kind,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
 

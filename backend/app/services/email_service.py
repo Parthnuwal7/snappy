@@ -20,7 +20,7 @@ class EmailTransport:
     """Interface for sending one invoice email with a PDF attachment."""
 
     def send(self, *, to, subject, body, pdf_bytes=None, pdf_name=None,
-             from_name=None, reply_to=None):  # pragma: no cover - interface
+             from_name=None, reply_to=None, cc=None):  # pragma: no cover - interface
         raise NotImplementedError
 
 
@@ -34,7 +34,7 @@ class ResendTransport(EmailTransport):
         self.from_address = from_address or os.getenv('INVOICE_EMAIL_FROM', 'invoices@snappyco.org')
 
     def send(self, *, to, subject, body, pdf_bytes=None, pdf_name=None,
-             from_name=None, reply_to=None):
+             from_name=None, reply_to=None, cc=None):
         if not self.api_key:
             raise EmailError('RESEND_API_KEY is not configured')
 
@@ -52,6 +52,8 @@ class ResendTransport(EmailTransport):
         }
         if reply_to:
             payload['reply_to'] = reply_to
+        if cc:
+            payload['cc'] = [cc]
         if pdf_bytes is not None:
             payload['attachments'] = [{
                 'filename': pdf_name or 'invoice.pdf',

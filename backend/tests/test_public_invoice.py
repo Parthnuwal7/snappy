@@ -3,6 +3,7 @@ from datetime import date
 
 from app.models.models import db, Client, Invoice, InvoiceItem
 from app.models.auth import User, FirmDetails
+from app.services.firm_service import provision_firm_for_user
 from app.utils.invoice_links import sign
 
 
@@ -12,11 +13,15 @@ def _seed(app, status='sent'):
         user = User(supabase_id='sb-pub', email='u@example.com')
         db.session.add(user)
         db.session.flush()
-        db.session.add(FirmDetails(user_id=user.id, firm_name='Acme', firm_address='X'))
-        client = Client(user_id=user.id, name='Rao', email='c@example.com')
+        tenant = provision_firm_for_user(user, 'Acme')
+        db.session.add(FirmDetails(user_id=user.id, firm_id=tenant.id,
+                                   firm_name='Acme', firm_address='X'))
+        client = Client(firm_id=tenant.id, created_by_user_id=user.id,
+                        name='Rao', email='c@example.com')
         db.session.add(client)
         db.session.flush()
-        inv = Invoice(user_id=user.id, invoice_number='INV/0007', client_id=client.id,
+        inv = Invoice(firm_id=tenant.id, created_by_user_id=user.id,
+                      invoice_number='INV/0007', client_id=client.id,
                       invoice_date=date(2026, 6, 1), total=5900, status=status)
         inv.items.append(InvoiceItem(description='Work', quantity=1, rate=5900, amount=5900))
         db.session.add(inv)

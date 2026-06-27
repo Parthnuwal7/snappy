@@ -63,12 +63,12 @@ def import_migration():
         invoice_cache = {}  # {invoice_number: invoice}
         
         # Load existing clients for this user
-        existing_clients = Client.query.filter_by(user_id=user.id).all()
+        existing_clients = Client.query.filter_by(firm_id=user.firm_id).all()
         for c in existing_clients:
             client_cache[c.name.lower()] = c
         
         # Load existing invoices for this user
-        existing_invoices = Invoice.query.filter_by(user_id=user.id).all()
+        existing_invoices = Invoice.query.filter_by(firm_id=user.firm_id).all()
         for inv in existing_invoices:
             invoice_cache[inv.invoice_number] = inv
         
@@ -84,7 +84,7 @@ def import_migration():
                 if not client:
                     # Create new client
                     client = Client(
-                        user_id=user.id,
+                        firm_id=user.firm_id, created_by_user_id=user.id,
                         name=client_name,
                         address=row.get('client_address', ''),
                         email=row.get('client_email', ''),
@@ -118,7 +118,7 @@ def import_migration():
                         status = 'paid'
                     
                     invoice = Invoice(
-                        user_id=user.id,
+                        firm_id=user.firm_id, created_by_user_id=user.id,
                         invoice_number=invoice_number,
                         client_id=client.id,
                         invoice_date=invoice_date,
@@ -202,7 +202,7 @@ def import_clients():
         errors = []
         
         # Load existing clients for duplicate check
-        existing_clients = {c.name.lower(): c for c in Client.query.filter_by(user_id=user.id).all()}
+        existing_clients = {c.name.lower(): c for c in Client.query.filter_by(firm_id=user.firm_id).all()}
         
         for row_num, row in enumerate(reader, start=2):
             try:
@@ -217,7 +217,7 @@ def import_clients():
                     continue
                 
                 client = Client(
-                    user_id=user.id,
+                    firm_id=user.firm_id, created_by_user_id=user.id,
                     name=name,
                     address=row.get('address', ''),
                     email=row.get('email', ''),
@@ -276,7 +276,7 @@ def import_invoices():
         errors = []
         
         # Load existing clients
-        client_cache = {c.name.lower(): c for c in Client.query.filter_by(user_id=user.id).all()}
+        client_cache = {c.name.lower(): c for c in Client.query.filter_by(firm_id=user.firm_id).all()}
         invoice_cache = {}  # {invoice_number: invoice}
         
         for row_num, row in enumerate(reader, start=2):
@@ -312,7 +312,7 @@ def import_invoices():
                         status = 'paid'
                     
                     invoice = Invoice(
-                        user_id=user.id,
+                        firm_id=user.firm_id, created_by_user_id=user.id,
                         invoice_number=invoice_number,
                         client_id=client.id,
                         invoice_date=invoice_date,
@@ -399,7 +399,7 @@ def import_items_catalog():
                     continue
                 
                 item = Item(
-                    user_id=user.id,
+                    firm_id=user.firm_id, created_by_user_id=user.id,
                     name=name,
                     alias=row.get('alias', ''),
                     description=row.get('description', ''),
@@ -486,7 +486,7 @@ def import_v2_companies():
         clients_skipped = 0
         errors = []
         
-        existing_clients = {c.name.lower(): c for c in Client.query.filter_by(user_id=user.id).all()}
+        existing_clients = {c.name.lower(): c for c in Client.query.filter_by(firm_id=user.firm_id).all()}
         
         for row_num, row in enumerate(reader, start=2):
             try:
@@ -500,7 +500,7 @@ def import_v2_companies():
                     continue
                 
                 client = Client(
-                    user_id=user.id,
+                    firm_id=user.firm_id, created_by_user_id=user.id,
                     name=name,
                     address=row.get('address', ''),
                     email=row.get('email', ''),
@@ -572,11 +572,11 @@ def import_v2_invoices():
         errors = []
         
         # Load existing clients
-        client_cache = {c.name.lower(): c for c in Client.query.filter_by(user_id=user.id).all()}
+        client_cache = {c.name.lower(): c for c in Client.query.filter_by(firm_id=user.firm_id).all()}
         invoice_cache = {}  # {standardized_number: invoice}
         
         # Load existing invoices and delete their items (for overwrite)
-        existing_invoices = Invoice.query.filter_by(user_id=user.id).all()
+        existing_invoices = Invoice.query.filter_by(firm_id=user.firm_id).all()
         invoices_to_overwrite = {}
         for inv in existing_invoices:
             invoices_to_overwrite[inv.invoice_number] = inv
@@ -623,7 +623,7 @@ def import_v2_invoices():
                             invoice_date = datetime.utcnow().date()
                         
                         invoice = Invoice(
-                            user_id=user.id,
+                            firm_id=user.firm_id, created_by_user_id=user.id,
                             invoice_number=invoice_number,
                             client_id=client.id,
                             invoice_date=invoice_date,
@@ -716,7 +716,7 @@ def import_v2_items():
         items_skipped = 0
         errors = []
         
-        existing_items = {i.name.lower(): i for i in Item.query.filter_by(user_id=user.id).all()}
+        existing_items = {i.name.lower(): i for i in Item.query.filter_by(firm_id=user.firm_id).all()}
         
         for row_num, row in enumerate(reader, start=2):
             try:
@@ -729,7 +729,7 @@ def import_v2_items():
                     continue
                 
                 item = Item(
-                    user_id=user.id,
+                    firm_id=user.firm_id, created_by_user_id=user.id,
                     name=name,
                     alias=row.get('alias', ''),
                     description='',

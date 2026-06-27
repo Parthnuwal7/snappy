@@ -1,15 +1,23 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { ArrowRight } from 'lucide-react';
 
 export default function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Honor a post-login destination (e.g. an invite-accept link). Only allow
+  // same-app relative paths so this can't be used as an open redirect.
+  const redirectRaw = searchParams.get('redirect') || '/';
+  const redirectTo = redirectRaw.startsWith('/') && !redirectRaw.startsWith('//')
+    ? redirectRaw
+    : '/';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,7 +25,7 @@ export default function Login() {
     setIsLoading(true);
     try {
       await login(email, password);
-      navigate('/');
+      navigate(redirectTo);
     } catch (err: any) {
       setError(err.message || 'Login failed. Please check your credentials.');
     } finally {

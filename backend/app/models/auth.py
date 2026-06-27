@@ -20,6 +20,9 @@ class User(db.Model):
     password_hash = db.Column(db.String(256))
     is_active = db.Column(db.Boolean, default=True)
     is_onboarded = db.Column(db.Boolean, default=False)
+    # Firm tenancy: a user belongs to exactly one firm with exactly one role.
+    firm_id = db.Column(db.Integer, db.ForeignKey('firms.id'), index=True)
+    role_id = db.Column(db.Integer, db.ForeignKey('roles.id'))
     device_id = db.Column(db.Text)
     device_info = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -28,7 +31,9 @@ class User(db.Model):
     
     # Relationships
     firm_details = db.relationship('FirmDetails', back_populates='user', uselist=False, cascade='all, delete-orphan')
-    bank_accounts = db.relationship('BankAccount', back_populates='user', cascade='all, delete-orphan')
+    bank_accounts = db.relationship('BankAccount', back_populates='user',
+                                    foreign_keys='BankAccount.user_id',
+                                    cascade='all, delete-orphan')
     clients = db.relationship('Client', back_populates='user', cascade='all, delete-orphan')
     items = db.relationship('Item', back_populates='user', cascade='all, delete-orphan')
     invoices = db.relationship('Invoice', back_populates='user', cascade='all, delete-orphan')
@@ -64,7 +69,9 @@ class FirmDetails(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True)
-    
+    # One profile per firm. Nullable during transition; backfilled by migration 008.
+    firm_id = db.Column(db.Integer, db.ForeignKey('firms.id'), unique=True, index=True)
+
     # Firm Details
     firm_name = db.Column(db.String(200), nullable=False)
     firm_address = db.Column(db.Text, nullable=False)
@@ -134,7 +141,10 @@ class BankAccount(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    
+    # Firm-owned payment details (transition: user_id kept; firm_id is the scope).
+    firm_id = db.Column(db.Integer, db.ForeignKey('firms.id'), index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+
     bank_name = db.Column(db.String(200))
     account_number = db.Column(db.String(100))
     account_holder_name = db.Column(db.String(200))
@@ -146,13 +156,15 @@ class BankAccount(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationships
-    user = db.relationship('User', back_populates='bank_accounts')
-    
+    # Relationships — pin foreign_keys since two columns FK to users.id now.
+    user = db.relationship('User', back_populates='bank_accounts', foreign_keys=[user_id])
+
     def to_dict(self):
         return {
             'id': self.id,
             'user_id': self.user_id,
+            'firm_id': self.firm_id,
+            'created_by_user_id': self.created_by_user_id,
             'bank_name': self.bank_name,
             'account_number': self.account_number,
             'account_holder_name': self.account_holder_name,
@@ -165,5 +177,73 @@ class BankAccount(db.Model):
         }
 
 
-# Keep Firm as alias for backwards compatibility during migration
-Firm = FirmDetails
+class Firm(db.Model):
+    """The tenant. Owns all billing data; has many members (users)."""
+    __tablename__ = 'firms'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class Role(db.Model):
+    """Firm-owned, editable bundle of permission keys (a module x action matrix)."""
+    __tablename__ = 'roles'
+    __table_args__ = (
+        db.UniqueConstraint('firm_id', 'name', name='roles_firm_name_key'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    firm_id = db.Column(db.Integer, db.ForeignKey('firms.id'), nullable=False, index=True)
+    name = db.Column(db.String(80), nullable=False)
+    description = db.Column(db.Text)
+    permissions = db.Column(db.JSON, default=list)
+    is_system = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'firm_id': self.firm_id,
+            'name': self.name,
+            'description': self.description,
+            'permissions': self.permissions or [],
+            'is_system': self.is_system,
+        }
+
+
+class FirmInvite(db.Model):
+    """Pending member invitation. The raw token is never serialized."""
+    __tablename__ = 'firm_invites'
+
+    id = db.Column(db.Integer, primary_key=True)
+    firm_id = db.Column(db.Integer, db.ForeignKey('firms.id'), nullable=False, index=True)
+    email = db.Column(db.String(200), nullable=False, index=True)
+    role_id = db.Column(db.Integer, db.ForeignKey('roles.id'), nullable=False)
+    token = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    status = db.Column(db.String(20), nullable=False, default='pending')  # pending|accepted|revoked|expired
+    invited_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    expires_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    accepted_at = db.Column(db.DateTime)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'firm_id': self.firm_id,
+            'email': self.email,
+            'role_id': self.role_id,
+            'status': self.status,
+            'invited_by': self.invited_by,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'accepted_at': self.accepted_at.isoformat() if self.accepted_at else None,
+        }

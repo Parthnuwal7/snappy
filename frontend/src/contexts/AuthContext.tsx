@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase, getDeviceId, getDeviceInfo } from '../lib/supabase';
 
@@ -44,11 +44,18 @@ export interface Firm {
   updated_at?: string;
 }
 
+export interface Membership {
+  firm_id: number;
+  role: { id: number; name: string; is_system: boolean };
+  permissions: string[];
+}
+
 interface AuthContextType {
   user: SupabaseUser | null;
   session: Session | null;
   profile: UserProfile | null;
   firm: Firm | null;
+  membership: Membership | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   isOnboarded: boolean;
@@ -70,7 +77,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [firm, setFirm] = useState<Firm | null>(null);
+  const [membership, setMembership] = useState<Membership | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // supabase-js re-emits SIGNED_IN on every tab focus and TOKEN_REFRESHED on the
+  // auto-refresh timer. Track identity so we only re-fetch the profile when the
+  // user actually changes, and only push device info once per real sign-in —
+  // otherwise every focus fires /auth/me + /auth/device needlessly.
+  const lastUserId = useRef<string | null>(null);
+  const deviceSynced = useRef(false);
 
   // Fetch user profile and firm from backend
   const fetchProfile = useCallback(async (accessToken: string) => {
@@ -85,6 +100,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (response.ok) {
         const data = await response.json();
         setProfile(data.profile || null);
+        setMembership(data.membership || null);
 
         // Merge bank data into firm object for Settings page compatibility
         if (data.firm) {
@@ -107,6 +123,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Profile doesn't exist yet - user needs to complete onboarding
         setProfile(null);
         setFirm(null);
+        setMembership(null);
       } else {
         // Transient error (most commonly 401 from JWT clock-skew on first
         // call after login). Don't blank out the profile — leave whatever
@@ -156,6 +173,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (initialSession) {
         setSession(initialSession);
         setUser(initialSession.user);
+        lastUserId.current = initialSession.user.id;
         await fetchProfile(initialSession.access_token);
       }
 
@@ -170,16 +188,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setSession(newSession);
         setUser(newSession?.user ?? null);
 
-        if (newSession?.access_token) {
-          await fetchProfile(newSession.access_token);
+        const uid = newSession?.user?.id ?? null;
 
-          // Update device info on sign in
-          if (event === 'SIGNED_IN') {
-            await updateDeviceInfo(newSession.access_token);
-          }
-        } else {
+        if (!uid || !newSession?.access_token) {
+          lastUserId.current = null;
+          deviceSynced.current = false;
           setProfile(null);
           setFirm(null);
+          setMembership(null);
+          return;
+        }
+
+        // Only re-fetch the profile when the user genuinely changed — skip the
+        // redundant SIGNED_IN re-emits supabase fires on tab focus / refresh.
+        if (uid !== lastUserId.current) {
+          lastUserId.current = uid;
+          await fetchProfile(newSession.access_token);
+        }
+
+        // Push device info once per real sign-in, not on every focus event.
+        if (event === 'SIGNED_IN' && !deviceSynced.current) {
+          deviceSynced.current = true;
+          await updateDeviceInfo(newSession.access_token);
         }
       }
     );
@@ -225,6 +255,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setSession(null);
     setProfile(null);
     setFirm(null);
+    setMembership(null);
   };
 
   const resetPassword = async (email: string) => {
@@ -260,6 +291,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         session,
         profile,
         firm,
+        membership,
         isAuthenticated: !!user,
         isLoading,
         isOnboarded: profile?.is_onboarded ?? false,

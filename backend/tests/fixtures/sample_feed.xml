@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Sample Court Feed</title>
+    <item>
+      <title>Alpha v. Beta</title>
+      <link>https://indiankanoon.org/doc/111/</link>
+      <description>Summary of Alpha v. Beta judgement.</description>
+      <pubDate>Tue, 17 Jun 2026 10:00:00 +0530</pubDate>
+    </item>
+    <item>
+      <title>Gamma v. Delta</title>
+      <link>https://indiankanoon.org/doc/222/</link>
+      <description>Summary of Gamma v. Delta.</description>
+      <pubDate>Mon, 16 Jun 2026 09:00:00 +0530</pubDate>
+    </item>
+    <item>
+      <title>No Link Item</title>
+      <description>Should be skipped because it has no link.</description>
+    </item>
+  </channel>
+</rss>

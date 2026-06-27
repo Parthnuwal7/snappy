@@ -1,8 +1,8 @@
-"""Client API endpoints - multi-tenant"""
+"""Client API endpoints - firm-scoped with role permissions."""
 from flask import Blueprint, request, jsonify, g
 from app.models.models import db, Client, Invoice
-from app.models.auth import User
 from app.middleware.jwt_auth import jwt_required
+from app.middleware.firm_context import require_permission
 from app.utils.pagination import pagination_requested, get_pagination_args, paginate_query
 from rapidfuzz import fuzz, process
 from sqlalchemy import func
@@ -10,29 +10,18 @@ from sqlalchemy import func
 bp = Blueprint('clients', __name__)
 
 
-def get_current_user_id():
-    """Get the internal user ID from Supabase ID"""
-    supabase_id = getattr(g, 'user_id', None)
-    if not supabase_id:
-        return None
-    user = User.query.filter_by(supabase_id=supabase_id).first()
-    return user.id if user else None
-
-
 @bp.route('/clients', methods=['GET'])
 @jwt_required
+@require_permission('clients.read')
 def get_clients():
-    """Get all clients for current user with optional search"""
-    user_id = get_current_user_id()
-    if not user_id:
-        return jsonify({'error': 'User not found'}), 401
-    
+    """Get all clients for the current firm with optional search"""
+    firm_id = g.firm_id
     search = request.args.get('search', '')
 
     # Paginated mode (list page): SQL substring filter across all fields, then page.
     # Search spans every client, irrespective of which page is shown.
     if pagination_requested():
-        query = Client.query.filter_by(user_id=user_id)
+        query = Client.query.filter_by(firm_id=firm_id)
         term = search.strip()
         if term:
             like = f"%{term}%"
@@ -50,8 +39,8 @@ def get_clients():
         return jsonify(paginate_query(query, page, page_size, lambda c: c.to_dict()))
 
     if search and len(search) >= 2:  # Minimum 2 chars for search
-        # Fuzzy search clients for this user
-        all_clients = Client.query.filter_by(user_id=user_id).all()
+        # Fuzzy search clients for this firm
+        all_clients = Client.query.filter_by(firm_id=firm_id).all()
         if all_clients:
             # Use WRatio for better partial matching (handles "ICICI" matching "icici lomb")
             matches = process.extract(
@@ -69,20 +58,20 @@ def get_clients():
         else:
             clients = []
     else:
-        clients = Client.query.filter_by(user_id=user_id).order_by(Client.name).all()
-    
+        clients = Client.query.filter_by(firm_id=firm_id).order_by(Client.name).all()
+
     return jsonify([client.to_dict() for client in clients])
 
 
-def recent_clients_for_user(user_id, limit=6):
-    """Return the user's clients ordered by most recent invoice, capped at limit.
+def recent_clients_for_firm(firm_id, limit=6):
+    """Return the firm's clients ordered by most recent invoice, capped at limit.
 
     Clients with no invoices are excluded. Returns a list of client dicts.
     """
     rows = (
         db.session.query(Client)
         .join(Invoice, Invoice.client_id == Client.id)
-        .filter(Client.user_id == user_id)
+        .filter(Client.firm_id == firm_id)
         .group_by(Client.id)
         .order_by(func.max(Invoice.invoice_date).desc())
         .limit(limit)
@@ -93,46 +82,39 @@ def recent_clients_for_user(user_id, limit=6):
 
 @bp.route('/clients/recent', methods=['GET'])
 @jwt_required
+@require_permission('clients.read')
 def get_recent_clients():
-    """Get the current user's most-recently-billed clients."""
-    user_id = get_current_user_id()
-    if not user_id:
-        return jsonify({'error': 'User not found'}), 401
+    """Get the current firm's most-recently-billed clients."""
     limit = request.args.get('limit', default=6, type=int)
-    return jsonify(recent_clients_for_user(user_id, limit=limit))
+    return jsonify(recent_clients_for_firm(g.firm_id, limit=limit))
 
 
 @bp.route('/clients/<int:client_id>', methods=['GET'])
 @jwt_required
+@require_permission('clients.read')
 def get_client(client_id):
-    """Get a single client by ID (must belong to current user)"""
-    user_id = get_current_user_id()
-    if not user_id:
-        return jsonify({'error': 'User not found'}), 401
-    
-    client = Client.query.filter_by(id=client_id, user_id=user_id).first()
+    """Get a single client by ID (must belong to current firm)"""
+    client = Client.query.filter_by(id=client_id, firm_id=g.firm_id).first()
     if not client:
         return jsonify({'error': 'Client not found'}), 404
-    
+
     return jsonify(client.to_dict())
 
 
 @bp.route('/clients', methods=['POST'])
 @jwt_required
+@require_permission('clients.create')
 def create_client():
-    """Create a new client for current user"""
-    user_id = get_current_user_id()
-    if not user_id:
-        return jsonify({'error': 'User not found'}), 401
-    
+    """Create a new client for the current firm"""
     data = request.get_json()
-    
+
     # Validate required fields
     if not data.get('name'):
         return jsonify({'error': 'Client name is required'}), 400
-    
+
     client = Client(
-        user_id=user_id,
+        firm_id=g.firm_id,
+        created_by_user_id=g.user.id,
         name=data['name'],
         email=data.get('email'),
         phone=data.get('phone'),
@@ -141,27 +123,24 @@ def create_client():
         default_tax_rate=data.get('default_tax_rate', 18.0),
         notes=data.get('notes')
     )
-    
+
     db.session.add(client)
     db.session.commit()
-    
+
     return jsonify(client.to_dict()), 201
 
 
 @bp.route('/clients/<int:client_id>', methods=['PUT'])
 @jwt_required
+@require_permission('clients.update')
 def update_client(client_id):
-    """Update an existing client (must belong to current user)"""
-    user_id = get_current_user_id()
-    if not user_id:
-        return jsonify({'error': 'User not found'}), 401
-    
-    client = Client.query.filter_by(id=client_id, user_id=user_id).first()
+    """Update an existing client (must belong to current firm)"""
+    client = Client.query.filter_by(id=client_id, firm_id=g.firm_id).first()
     if not client:
         return jsonify({'error': 'Client not found'}), 404
-    
+
     data = request.get_json()
-    
+
     # Update fields
     if 'name' in data:
         client.name = data['name']
@@ -177,28 +156,25 @@ def update_client(client_id):
         client.default_tax_rate = data['default_tax_rate']
     if 'notes' in data:
         client.notes = data['notes']
-    
+
     db.session.commit()
     return jsonify(client.to_dict())
 
 
 @bp.route('/clients/<int:client_id>', methods=['DELETE'])
 @jwt_required
+@require_permission('clients.delete')
 def delete_client(client_id):
-    """Delete a client (must belong to current user)"""
-    user_id = get_current_user_id()
-    if not user_id:
-        return jsonify({'error': 'User not found'}), 401
-    
-    client = Client.query.filter_by(id=client_id, user_id=user_id).first()
+    """Delete a client (must belong to current firm)"""
+    client = Client.query.filter_by(id=client_id, firm_id=g.firm_id).first()
     if not client:
         return jsonify({'error': 'Client not found'}), 404
-    
+
     # Check if client has invoices
     if client.invoices.count() > 0:
         return jsonify({'error': 'Cannot delete client with existing invoices'}), 400
-    
+
     db.session.delete(client)
     db.session.commit()
-    
+
     return jsonify({'message': 'Client deleted successfully'})
