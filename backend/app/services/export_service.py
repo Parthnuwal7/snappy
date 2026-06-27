@@ -111,10 +111,10 @@ def export_full_user_data(
     bank_accounts = BankAccount.query.filter_by(user_id=user.id).all()
     default_bank = next((b for b in bank_accounts if b.is_default), None) \
         or (bank_accounts[0] if bank_accounts else None)
-    clients = Client.query.filter_by(user_id=user.id).all()
-    items = Item.query.filter_by(user_id=user.id).all()
+    clients = Client.query.filter_by(firm_id=user.firm_id).all()
+    items = Item.query.filter_by(firm_id=user.firm_id).all()
     invoices = (
-        Invoice.query.filter_by(user_id=user.id)
+        Invoice.query.filter_by(firm_id=user.firm_id)
         .order_by(Invoice.invoice_date.desc())
         .all()
     )

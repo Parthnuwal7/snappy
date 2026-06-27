@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { api, Client, InvoiceItem, Item } from '../api';
 import ItemAutocomplete from '../components/ItemAutocomplete';
@@ -9,6 +9,7 @@ import { ArrowLeft, Plus, Trash2, RotateCcw, Search } from 'lucide-react';
 
 interface InvoiceForm {
   client_id: number;
+  case_file_id?: number | null;
   invoice_date: string;
   due_date: string;
   short_desc: string;
@@ -22,6 +23,7 @@ const formatINR = (value: number) =>
 
 export default function NewInvoice() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { firm } = useAuth();
@@ -41,6 +43,7 @@ export default function NewInvoice() {
   const { register, control, handleSubmit, watch, setValue, reset } = useForm<InvoiceForm>({
     defaultValues: {
       client_id: 0,
+      case_file_id: searchParams.get('case_file_id') ? Number(searchParams.get('case_file_id')) : null,
       invoice_date: new Date().toISOString().split('T')[0],
       due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       tax_rate: defaultTaxRate,
@@ -60,6 +63,7 @@ export default function NewInvoice() {
     if (invoice) {
       const formData = {
         client_id: invoice.client_id,
+        case_file_id: invoice.case_file_id ?? null,
         invoice_date: invoice.invoice_date,
         due_date: invoice.due_date || '',
         short_desc: invoice.short_desc || '',
@@ -73,6 +77,19 @@ export default function NewInvoice() {
     }
   }, [invoice, reset]);
 
+  // Prefill the client when composing from a case file (CaseDetail link passes
+  // ?client_id=&case_file_id=). Runs only for a brand-new invoice.
+  useEffect(() => {
+    const cid = searchParams.get('client_id');
+    if (!id && cid && !selectedClient) {
+      api.getClient(Number(cid)).then((c) => {
+        setSelectedClient(c);
+        setValue('client_id', c.id);
+        setValue('tax_rate', c.default_tax_rate);
+      });
+    }
+  }, [id, searchParams, selectedClient, setValue]);
+
   const { data: clients, isLoading: clientsLoading } = useQuery({
     queryKey: ['clients', debouncedSearch],
     queryFn: () => api.getClients(debouncedSearch),
@@ -83,6 +100,15 @@ export default function NewInvoice() {
     queryKey: ['clients', 'recent'],
     queryFn: () => api.getRecentClients(6),
     enabled: !id,  // only when composing a brand-new invoice
+  });
+
+  // Cases belonging to the chosen client, for the optional case link.
+  const selectedClientId = watch('client_id');
+  const caseFileId = watch('case_file_id');
+  const { data: caseOptions = [] } = useQuery({
+    queryKey: ['case-files', 'for-client', selectedClientId],
+    queryFn: () => api.getCaseFiles({ client_id: selectedClientId }),
+    enabled: !!selectedClientId,
   });
 
   const createMutation = useMutation({
@@ -234,6 +260,22 @@ export default function NewInvoice() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {selectedClient && (
+            <div className="mt-5">
+              <label className="field-label">Case (optional)</label>
+              <select
+                value={caseFileId ?? ''}
+                onChange={(e) => setValue('case_file_id', e.target.value ? Number(e.target.value) : null)}
+                className="field-select"
+              >
+                <option value="">— No case —</option>
+                {caseOptions.map((c) => (
+                  <option key={c.id} value={c.id}>{c.case_number} · {c.title}</option>
+                ))}
+              </select>
             </div>
           )}
         </section>

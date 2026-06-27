@@ -22,7 +22,7 @@ def _load_verified_invoice(user_id, invoice_id, sig):
     invoice = Invoice.query.options(
         joinedload(Invoice.client),
         joinedload(Invoice.items),
-    ).filter_by(id=invoice_id, user_id=user_id).first()
+    ).filter_by(id=invoice_id, created_by_user_id=user_id).first()
     if not invoice or invoice.status == 'void':
         return None
     return invoice

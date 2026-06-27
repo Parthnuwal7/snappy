@@ -60,11 +60,13 @@ def test_paginate_query_against_db(app):
         user = User(supabase_id='sb-pg-1', email='pg@example.com')
         db.session.add(user)
         db.session.flush()
+        from app.services.firm_service import provision_firm_for_user
+        tenant = provision_firm_for_user(user, 'PG Firm')
         for n in range(120):
-            db.session.add(Client(user_id=user.id, name=f"Client {n:03d}"))
+            db.session.add(Client(firm_id=tenant.id, created_by_user_id=user.id, name=f"Client {n:03d}"))
         db.session.commit()
 
-        query = Client.query.filter_by(user_id=user.id).order_by(Client.name)
+        query = Client.query.filter_by(firm_id=tenant.id).order_by(Client.name)
         env = paginate_query(query, page=2, page_size=50, serialize=lambda c: c.to_dict())
         assert env['total'] == 120
         assert env['total_pages'] == 3

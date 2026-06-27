@@ -5,10 +5,11 @@ import { ToastProvider } from './contexts/ToastContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
+import Home from './pages/Home';
+import Writing from './pages/Writing';
 import NewInvoice from './pages/NewInvoice';
 import InvoiceList from './pages/InvoiceList';
 import Clients from './pages/Clients';
-import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -17,7 +18,20 @@ import ResetPassword from './pages/ResetPassword';
 import Onboarding from './pages/Onboarding';
 import Items from './pages/Items';
 import Recurring from './pages/Recurring';
+import LegalFeed from './pages/LegalFeed';
 import PublicInvoice from './pages/PublicInvoice';
+import Team from './pages/Team';
+import Roles from './pages/Roles';
+import AcceptInvite from './pages/AcceptInvite';
+import CasesLayout from './pages/CasesLayout';
+import CasesKanban from './pages/CasesKanban';
+import CaseVault from './pages/CaseVault';
+import CaseCalendar from './pages/CaseCalendar';
+import CaseDetail from './pages/CaseDetail';
+import CauseListPrint from './pages/CauseListPrint';
+import DraftEditor from './pages/DraftEditor';
+import TemplateEditor from './pages/TemplateEditor';
+import DraftPrint from './pages/DraftPrint';
 
 function App() {
   // Keyboard shortcuts
@@ -49,11 +63,38 @@ function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          {/* Invite acceptance: authenticated but not gated on onboarding —
+              the invitee has a login but no firm until they accept. */}
+          <Route
+            path="/accept-invite/:token"
+            element={
+              <ProtectedRoute>
+                <AcceptInvite />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/onboarding"
             element={
               <ProtectedRoute>
                 <Onboarding />
+              </ProtectedRoute>
+            }
+          />
+          {/* Printable cause-list: auth-gated but chrome-free (outside Layout) */}
+          <Route
+            path="/print/cause-list"
+            element={
+              <ProtectedRoute requireOnboarding>
+                <CauseListPrint />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/print/draft/:id"
+            element={
+              <ProtectedRoute requireOnboarding>
+                <DraftPrint />
               </ProtectedRoute>
             }
           />
@@ -67,15 +108,27 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<Dashboard />} />
+            <Route index element={<Home />} />
+            <Route path="dashboard" element={<Navigate to="/reports" replace />} />
+            <Route path="writing" element={<Writing />} />
+            <Route path="writing/draft/:id" element={<DraftEditor />} />
+            <Route path="writing/template/:id" element={<TemplateEditor />} />
             <Route path="invoices" element={<InvoiceList />} />
             <Route path="invoices/new" element={<NewInvoice />} />
             <Route path="recurring" element={<Recurring />} />
             <Route path="invoices/:id/edit" element={<NewInvoice />} />
+            <Route path="cases" element={<CasesLayout />}>
+              <Route index element={<CasesKanban />} />
+              <Route path="vault" element={<CaseVault />} />
+              <Route path="calendar" element={<CaseCalendar />} />
+            </Route>
+            <Route path="cases/:id" element={<CaseDetail />} />
             <Route path="clients" element={<Clients />} />
             <Route path="items" element={<Items />} />
-            <Route path="reports" element={<Reports />} />
+            <Route path="legal-feed" element={<LegalFeed />} />
+            <Route path="reports" element={<Dashboard />} />
+            <Route path="team" element={<Team />} />
+            <Route path="roles" element={<Roles />} />
             <Route path="settings" element={<Settings />} />
             </Route>
           </Routes>

@@ -9,7 +9,7 @@ from datetime import timedelta
 import os
 
 from app.models.models import db, init_db, Keepalive
-from app.api import invoices, clients, analytics, import_csv, backup, auth, admin, items, storage, recurring, public
+from app.api import invoices, clients, analytics, import_csv, backup, auth, admin, items, storage, recurring, public, legal_feed, firm, roles, invites, case_files, case_events, case_documents, case_expenses, leads, case_notes, case_exhibits, calendar, tasks, writing
 
 # Load environment variables
 load_dotenv()
@@ -46,7 +46,7 @@ def create_app():
          resources={r"/*": {"origins": "*"}},
          supports_credentials=True,
          allow_headers=["Content-Type", "Authorization"],
-         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     )
     
     # Initialize database
@@ -55,9 +55,17 @@ def create_app():
     with app.app_context():
         init_db()
         # Import all models to ensure tables are created
-        from app.models.auth import User, Firm
+        from app.models.auth import User, Firm, Role, FirmInvite, FirmDetails, BankAccount
         from app.models.models import Item  # Ensure items table is created
         from app.models.models import RecurringSchedule  # ensure table is created
+        from app.models.case import CaseFile, CaseEvent, CaseDocument, CaseStageChange, CaseExpense, CaseNote  # ensure case tables are created
+        from app.models.lead import Lead  # ensure leads table is created
+        from app.models.task import Task  # ensure tasks table is created
+        from app.models.writing import WritingDoc  # ensure writing_documents table is created
+        from app.models.models import (
+            LegalFeedSource, LegalFeedItem, LegalFeedRun, LegalFeedSetting,
+            LegalFeedPreference, LegalFeedEvent,
+        )  # ensure legal feed tables are created
         db.create_all()
     
     # Register blueprints with API versioning (v1)
@@ -73,7 +81,21 @@ def create_app():
     app.register_blueprint(storage.bp, url_prefix='/api/v1/storage')
     app.register_blueprint(recurring.bp, url_prefix='/api/v1')
     app.register_blueprint(public.bp, url_prefix='/api/v1')
-    
+    app.register_blueprint(legal_feed.bp, url_prefix='/api/v1')
+    app.register_blueprint(firm.bp, url_prefix='/api/v1')
+    app.register_blueprint(roles.bp, url_prefix='/api/v1')
+    app.register_blueprint(invites.bp, url_prefix='/api/v1')
+    app.register_blueprint(case_files.bp, url_prefix='/api/v1')
+    app.register_blueprint(case_events.bp, url_prefix='/api/v1')
+    app.register_blueprint(case_documents.bp, url_prefix='/api/v1')
+    app.register_blueprint(case_expenses.bp, url_prefix='/api/v1')
+    app.register_blueprint(leads.bp, url_prefix='/api/v1')
+    app.register_blueprint(case_notes.bp, url_prefix='/api/v1')
+    app.register_blueprint(case_exhibits.bp, url_prefix='/api/v1')
+    app.register_blueprint(calendar.bp, url_prefix='/api/v1')
+    app.register_blueprint(tasks.bp, url_prefix='/api/v1')
+    app.register_blueprint(writing.bp, url_prefix='/api/v1')
+
     @app.route('/health')
     def health():
         """Read-only liveness check. Cheap, no side effects, no DB writes."""

@@ -1,6 +1,7 @@
 from datetime import date
 from app.models.models import db, Client, Invoice, RecurringSchedule
 from app.models.auth import User
+from app.services.firm_service import provision_firm_for_user
 from app.services.recurring_service import run_due_schedules
 
 
@@ -10,11 +11,13 @@ def _seed(app, next_run, end_date=None, frequency='monthly'):
         user = User(supabase_id='sb-rec', email='r@example.com')
         db.session.add(user)
         db.session.flush()
-        client = Client(user_id=user.id, name='Acme')
+        tenant = provision_firm_for_user(user, 'Acme')
+        client = Client(firm_id=tenant.id, created_by_user_id=user.id, name='Acme')
         db.session.add(client)
         db.session.flush()
         sched = RecurringSchedule(
-            user_id=user.id, client_id=client.id, items=[
+            firm_id=tenant.id, created_by_user_id=user.id,
+            client_id=client.id, items=[
                 {'description': 'Retainer', 'quantity': 1, 'rate': 5000},
             ], tax_rate=18, short_desc='Monthly retainer', frequency=frequency,
             start_date=next_run, next_run_date=next_run, end_date=end_date, active=True,
@@ -29,7 +32,7 @@ def test_due_schedule_creates_one_draft_and_advances(app):
     with app.app_context():
         created = run_due_schedules(db.session, today=date(2026, 6, 1))
         assert len(created) == 1
-        inv = Invoice.query.filter_by(user_id=user_id).one()
+        inv = Invoice.query.one()
         assert inv.status == 'draft'
         assert inv.source == 'recurring'
         assert float(inv.total) == 5900.0  # 5000 + 18%

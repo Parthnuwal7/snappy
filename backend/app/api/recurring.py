@@ -3,19 +3,11 @@ import os
 from datetime import datetime, date
 from flask import Blueprint, request, jsonify, g
 from app.models.models import db, RecurringSchedule, Client
-from app.models.auth import User
 from app.middleware.jwt_auth import jwt_required
+from app.middleware.firm_context import require_permission
 from app.services.recurring_service import run_due_schedules
 
 bp = Blueprint('recurring', __name__)
-
-
-def _current_user_id():
-    supabase_id = getattr(g, 'user_id', None)
-    if not supabase_id:
-        return None
-    user = User.query.filter_by(supabase_id=supabase_id).first()
-    return user.id if user else None
 
 
 def _parse_date(value):
@@ -24,12 +16,10 @@ def _parse_date(value):
 
 @bp.route('/recurring', methods=['GET'])
 @jwt_required
+@require_permission('recurring.read')
 def list_schedules():
-    user_id = _current_user_id()
-    if not user_id:
-        return jsonify({'error': 'User not found'}), 401
     rows = (RecurringSchedule.query
-            .filter_by(user_id=user_id)
+            .filter_by(firm_id=g.firm_id)
             .order_by(RecurringSchedule.next_run_date.asc())
             .all())
     return jsonify([s.to_dict() for s in rows])
@@ -37,15 +27,13 @@ def list_schedules():
 
 @bp.route('/recurring', methods=['POST'])
 @jwt_required
+@require_permission('recurring.create')
 def create_schedule():
-    user_id = _current_user_id()
-    if not user_id:
-        return jsonify({'error': 'User not found'}), 401
     data = request.get_json() or {}
 
     if not data.get('client_id'):
         return jsonify({'error': 'client_id is required'}), 400
-    client = Client.query.filter_by(id=data['client_id'], user_id=user_id).first()
+    client = Client.query.filter_by(id=data['client_id'], firm_id=g.firm_id).first()
     if not client:
         return jsonify({'error': 'Client not found'}), 404
     if data.get('frequency') not in ('weekly', 'monthly'):
@@ -55,7 +43,8 @@ def create_schedule():
         return jsonify({'error': 'start_date is required'}), 400
 
     sched = RecurringSchedule(
-        user_id=user_id,
+        firm_id=g.firm_id,
+        created_by_user_id=g.user.id,
         client_id=data['client_id'],
         title=data.get('title'),
         items=data.get('items', []),
@@ -75,11 +64,9 @@ def create_schedule():
 
 @bp.route('/recurring/<int:schedule_id>', methods=['PUT'])
 @jwt_required
+@require_permission('recurring.update')
 def update_schedule(schedule_id):
-    user_id = _current_user_id()
-    if not user_id:
-        return jsonify({'error': 'User not found'}), 401
-    sched = RecurringSchedule.query.filter_by(id=schedule_id, user_id=user_id).first()
+    sched = RecurringSchedule.query.filter_by(id=schedule_id, firm_id=g.firm_id).first()
     if not sched:
         return jsonify({'error': 'Schedule not found'}), 404
     data = request.get_json() or {}
@@ -110,11 +97,9 @@ def update_schedule(schedule_id):
 
 @bp.route('/recurring/<int:schedule_id>', methods=['DELETE'])
 @jwt_required
+@require_permission('recurring.delete')
 def delete_schedule(schedule_id):
-    user_id = _current_user_id()
-    if not user_id:
-        return jsonify({'error': 'User not found'}), 401
-    sched = RecurringSchedule.query.filter_by(id=schedule_id, user_id=user_id).first()
+    sched = RecurringSchedule.query.filter_by(id=schedule_id, firm_id=g.firm_id).first()
     if not sched:
         return jsonify({'error': 'Schedule not found'}), 404
     db.session.delete(sched)
@@ -124,14 +109,12 @@ def delete_schedule(schedule_id):
 
 @bp.route('/recurring/reminders', methods=['GET'])
 @jwt_required
+@require_permission('recurring.read')
 def reminders():
     """Recurring-generated drafts awaiting review — the in-app reminder feed."""
     from app.models.models import Invoice
-    user_id = _current_user_id()
-    if not user_id:
-        return jsonify({'error': 'User not found'}), 401
     drafts = (Invoice.query
-              .filter_by(user_id=user_id, status='draft', source='recurring')
+              .filter_by(firm_id=g.firm_id, status='draft', source='recurring')
               .order_by(Invoice.created_at.desc())
               .all())
     return jsonify([inv.to_dict() for inv in drafts])

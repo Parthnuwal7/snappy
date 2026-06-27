@@ -1,14 +1,38 @@
 """Authentication API endpoints - Supabase JWT Auth + multi-tenant support"""
 from flask import Blueprint, request, jsonify, g, session
 from app.models.models import db
-from app.models.auth import User, FirmDetails, BankAccount
+from app.models.auth import User, FirmDetails, BankAccount, Role
 from app.middleware.jwt_auth import jwt_required, jwt_optional
+from app.services.firm_service import provision_firm_for_user
+from app.rbac.permissions import ALL_PERMISSIONS
 from datetime import datetime
 from functools import wraps
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 bp = Blueprint('auth', __name__)
+
+
+def _membership_for(user):
+    """The caller's firm + role + effective permissions, or None if firm-less.
+
+    Mirrors load_firm_context: the Owner system role resolves to ALL_PERMISSIONS
+    so the catalog is the single source of truth for owner capability.
+    """
+    if not user.firm_id or not user.role_id:
+        return None
+    role = Role.query.get(user.role_id)
+    if not role:
+        return None
+    if role.is_system and role.name == 'Owner':
+        permissions = sorted(ALL_PERMISSIONS)
+    else:
+        permissions = sorted(role.permissions or [])
+    return {
+        'firm_id': user.firm_id,
+        'role': {'id': role.id, 'name': role.name, 'is_system': role.is_system},
+        'permissions': permissions,
+    }
 
 limiter = Limiter(
     key_func=get_remote_address,
@@ -33,9 +57,10 @@ def get_current_user():
         },
         'profile': None,
         'firm': None,
-        'bank': None
+        'bank': None,
+        'membership': None,
     }
-    
+
     if user:
         response['profile'] = {
             'id': user.id,
@@ -45,7 +70,9 @@ def get_current_user():
             'created_at': user.created_at.isoformat() if user.created_at else None,
             'updated_at': user.updated_at.isoformat() if user.updated_at else None,
         }
-        
+
+        response['membership'] = _membership_for(user)
+
         if user.is_onboarded and user.firm_details:
             response['firm'] = user.firm_details.to_dict()
             
@@ -120,9 +147,15 @@ def onboard():
         if not data.get(field):
             return jsonify({'error': f'{field} is required'}), 400
     
-    # Create firm details
+    # Provision the firm tenant + seeded roles, making this user its Owner.
+    # Idempotent guard: only provision if the user isn't already in a firm.
+    if not user.firm_id:
+        provision_firm_for_user(user, data['firm_name'])
+
+    # Create firm details (the firm's billing/branding profile)
     firm = FirmDetails(
         user_id=user.id,
+        firm_id=user.firm_id,
         firm_name=data['firm_name'],
         firm_address=data['firm_address'],
         firm_email=data.get('firm_email'),
@@ -143,6 +176,8 @@ def onboard():
     if data.get('bank_name') or data.get('account_number') or data.get('upi_id'):
         bank = BankAccount(
             user_id=user.id,
+            firm_id=user.firm_id,
+            created_by_user_id=user.id,
             bank_name=data.get('bank_name'),
             account_number=data.get('account_number'),
             account_holder_name=data.get('account_holder_name'),
