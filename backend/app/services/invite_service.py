@@ -100,11 +100,8 @@ def _send_invite_email(invite, role, transport, base_url):
     transport.send(to=invite.email, subject=subject, body=body, from_name=firm_name)
 
 
-def accept_invite(token, user):
-    """Attach `user` to the invite's firm + role. Caller commits. Returns invite."""
-    invite = FirmInvite.query.filter_by(token=token).first()
-    if not invite:
-        raise InviteError('Invalid invitation')
+def _attach(user, invite):
+    """Attach `user` to `invite`'s firm + role after validating the invite."""
     if invite.status != 'pending':
         raise InviteError(f'Invitation is {invite.status}')
     if invite.expires_at and invite.expires_at < datetime.utcnow():
@@ -114,7 +111,6 @@ def accept_invite(token, user):
     # must not consume it (e.g. a forwarded link).
     if user.email and invite.email and user.email.strip().lower() != invite.email:
         raise InviteError('This invitation was sent to a different email address')
-
     user.firm_id = invite.firm_id
     user.role_id = invite.role_id
     # Joining a firm completes onboarding — the invitee must not run the
@@ -123,6 +119,34 @@ def accept_invite(token, user):
     invite.status = 'accepted'
     invite.accepted_at = datetime.utcnow()
     return invite
+
+
+def accept_invite(token, user):
+    """Attach `user` to the token's firm + role. Caller commits. Returns invite."""
+    invite = FirmInvite.query.filter_by(token=token).first()
+    if not invite:
+        raise InviteError('Invalid invitation')
+    return _attach(user, invite)
+
+
+def pending_invite_for(email):
+    """Newest pending, unexpired invite for `email`, or None."""
+    email = (email or '').strip().lower()
+    if not email:
+        return None
+    invite = (FirmInvite.query.filter_by(email=email, status='pending')
+              .order_by(FirmInvite.created_at.desc()).first())
+    if invite and invite.expires_at and invite.expires_at < datetime.utcnow():
+        return None
+    return invite
+
+
+def accept_pending_invite(user):
+    """Attach `user` to their newest pending invite (matched by email). Caller commits."""
+    invite = pending_invite_for(user.email)
+    if not invite:
+        raise InviteError('No pending invitation for this account')
+    return _attach(user, invite)
 
 
 def revoke_invite(invite):

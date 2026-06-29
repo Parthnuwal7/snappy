@@ -122,6 +122,7 @@ export interface Invoice {
   sent_channel?: 'email' | 'whatsapp';
   notes?: string;
   items?: InvoiceItem[];
+  upi_uri?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -160,6 +161,7 @@ export interface PublicInvoice {
     account_number?: string;
     ifsc_code?: string;
     account_holder_name?: string;
+    upi_uri?: string;
   } | null;
 }
 
@@ -771,6 +773,20 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  updateProfile: (data: {
+    full_name?: string; designation?: string;
+    bar_council_number?: string; personal_phone?: string;
+  }) =>
+    fetchAPI<any>(`${API_BASE_URL}/auth/profile`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  dismissChecklist: () =>
+    fetchAPI<{ checklist_dismissed: boolean }>(`${API_BASE_URL}/auth/dismiss-checklist`, {
+      method: 'POST',
+    }),
+
   updateFirm: (data: any) =>
     fetchAPI<any>(`${API_BASE_URL}/auth/firm`, {
       method: 'PUT',
@@ -784,7 +800,7 @@ export const api = {
     }),
 
   // Storage - Image uploads
-  uploadImage: async (fileType: 'logo' | 'signature' | 'qr', file: File) => {
+  uploadImage: async (fileType: 'logo' | 'signature', file: File) => {
     const { supabase } = await import('./lib/supabase');
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
@@ -873,6 +889,12 @@ export const api = {
     fetchAPI<{ firm_id: number; role_id: number; invite: FirmInvite }>(
       `${API_BASE_URL}/invites/accept`,
       { method: 'POST', body: JSON.stringify({ token }) },
+    ),
+
+  acceptPendingInvite: () =>
+    fetchAPI<{ firm_id: number; role_id: number }>(
+      `${API_BASE_URL}/invites/accept-pending`,
+      { method: 'POST' },
     ),
 
   // ---- Case files -------------------------------------------------------
@@ -1086,12 +1108,12 @@ export const api = {
   deleteCaseExpense: (expenseId: number) =>
     fetchAPI<{ message: string }>(`${API_BASE_URL}/case-expenses/${expenseId}`, { method: 'DELETE' }),
 
-  getSignedUrl: (fileType: 'logo' | 'signature' | 'qr') =>
+  getSignedUrl: (fileType: 'logo' | 'signature') =>
     fetchAPI<{ signed_url: string; expires_in: number; path: string }>(
       `${API_BASE_URL}/storage/signed-url/${fileType}`
     ),
 
-  deleteImage: (fileType: 'logo' | 'signature' | 'qr') =>
+  deleteImage: (fileType: 'logo' | 'signature') =>
     fetchAPI<{ message: string }>(`${API_BASE_URL}/storage/delete/${fileType}`, {
       method: 'DELETE',
     }),

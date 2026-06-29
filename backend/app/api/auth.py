@@ -1,9 +1,10 @@
 """Authentication API endpoints - Supabase JWT Auth + multi-tenant support"""
 from flask import Blueprint, request, jsonify, g, session
 from app.models.models import db
-from app.models.auth import User, FirmDetails, BankAccount, Role
+from app.models.auth import User, FirmDetails, BankAccount, Role, Firm, FirmInvite
 from app.middleware.jwt_auth import jwt_required, jwt_optional
 from app.services.firm_service import provision_firm_for_user
+from app.services import invite_service
 from app.rbac.permissions import ALL_PERMISSIONS
 from datetime import datetime
 from functools import wraps
@@ -41,6 +42,13 @@ limiter = Limiter(
 )
 
 
+def _bank_upi_error(upi_id, payee_name):
+    """Return an error message when UPI identity is incomplete, else None."""
+    if not (upi_id or '').strip() or not (payee_name or '').strip():
+        return 'UPI ID and UPI payee name are required'
+    return None
+
+
 @bp.route('/me', methods=['GET'])
 @jwt_required
 def get_current_user():
@@ -59,6 +67,8 @@ def get_current_user():
         'firm': None,
         'bank': None,
         'membership': None,
+        'pending_invite': None,
+        'setup': None,
     }
 
     if user:
@@ -67,6 +77,12 @@ def get_current_user():
             'device_id': getattr(user, 'device_id', None),
             'device_info': getattr(user, 'device_info', None),
             'is_onboarded': user.is_onboarded,
+            'full_name': user.full_name,
+            'designation': user.designation,
+            'bar_council_number': user.bar_council_number,
+            'personal_phone': user.personal_phone,
+            'is_solo': user.is_solo,
+            'checklist_dismissed': bool(user.checklist_dismissed),
             'created_at': user.created_at.isoformat() if user.created_at else None,
             'updated_at': user.updated_at.isoformat() if user.updated_at else None,
         }
@@ -75,12 +91,39 @@ def get_current_user():
 
         if user.is_onboarded and user.firm_details:
             response['firm'] = user.firm_details.to_dict()
-            
+
             # Get default bank account
             default_bank = BankAccount.query.filter_by(user_id=user.id, is_default=True).first()
             if default_bank:
                 response['bank'] = default_bank.to_dict()
-    
+
+    # Pending-invite surfacing: a firm-less user whose email was invited.
+    if user and not user.firm_id:
+        pend = invite_service.pending_invite_for(g.user_email)
+        if pend:
+            firm = Firm.query.get(pend.firm_id)
+            role = Role.query.get(pend.role_id)
+            response['pending_invite'] = {
+                'firm_name': firm.name if firm else None,
+                'role_name': role.name if role else None,
+            }
+
+    # Derived setup checklist state (only meaningful once in a firm).
+    if user and user.firm_id:
+        fd = user.firm_details
+        has_bank = BankAccount.query.filter_by(firm_id=user.firm_id).count() > 0
+        has_branding = bool(fd and (fd.logo_path or fd.signature_path))
+        has_billing = bool(fd and fd.billing_terms)
+        has_team = FirmInvite.query.filter_by(firm_id=user.firm_id).count() > 0
+        response['setup'] = {
+            'bank': has_bank,
+            'branding': has_branding,
+            'billing': has_billing,
+            'team': has_team,
+            'dismissed': bool(user.checklist_dismissed),
+            'complete': all([has_bank, has_branding, has_billing, has_team]),
+        }
+
     return jsonify(response)
 
 
@@ -138,62 +181,81 @@ def onboard():
     
     if user.is_onboarded:
         return jsonify({'error': 'User already onboarded'}), 400
-    
-    data = request.get_json()
-    
-    # Validate required fields
-    required_fields = ['firm_name', 'firm_address']
-    for field in required_fields:
-        if not data.get(field):
-            return jsonify({'error': f'{field} is required'}), 400
-    
+
+    data = request.get_json() or {}
+
+    # Minimal gate: identify the person and name the firm. Everything else
+    # (banking, branding, billing, address) is deferred to the Home checklist.
+    if not data.get('full_name'):
+        return jsonify({'error': 'full_name is required'}), 400
+    if not data.get('firm_name'):
+        return jsonify({'error': 'firm_name is required'}), 400
+
+    # Personal/professional profile.
+    user.full_name = data['full_name']
+    user.designation = data.get('designation')
+    user.bar_council_number = data.get('bar_council_number')
+    user.personal_phone = data.get('personal_phone')
+    user.is_solo = bool(data.get('is_solo', False))
+
     # Provision the firm tenant + seeded roles, making this user its Owner.
     # Idempotent guard: only provision if the user isn't already in a firm.
     if not user.firm_id:
         provision_firm_for_user(user, data['firm_name'])
 
-    # Create firm details (the firm's billing/branding profile)
+    # Minimal firm profile — address/branding/billing land later via the checklist.
     firm = FirmDetails(
         user_id=user.id,
         firm_id=user.firm_id,
         firm_name=data['firm_name'],
-        firm_address=data['firm_address'],
-        firm_email=data.get('firm_email'),
-        firm_phone=data.get('firm_phone'),
-        firm_phone_2=data.get('firm_phone_2'),
-        firm_website=data.get('firm_website'),
-        terms_and_conditions=data.get('terms_and_conditions'),
-        billing_terms=data.get('billing_terms'),
-        default_template=data.get('default_template', 'Simple'),
-        invoice_prefix=data.get('invoice_prefix', 'INV'),
-        default_tax_rate=float(data.get('default_tax_rate', 18.0)),
-        currency=data.get('currency', 'INR'),
-        show_due_date=data.get('show_due_date', True)
+        firm_address=data.get('firm_address'),
     )
     db.session.add(firm)
-    
-    # Create bank account if provided
-    if data.get('bank_name') or data.get('account_number') or data.get('upi_id'):
-        bank = BankAccount(
-            user_id=user.id,
-            firm_id=user.firm_id,
-            created_by_user_id=user.id,
-            bank_name=data.get('bank_name'),
-            account_number=data.get('account_number'),
-            account_holder_name=data.get('account_holder_name'),
-            ifsc_code=data.get('ifsc_code'),
-            upi_id=data.get('upi_id'),
-            is_default=True
-        )
-        db.session.add(bank)
-    
+
     user.is_onboarded = True
     db.session.commit()
-    
+
     return jsonify({
         'message': 'Onboarding completed successfully',
         'firm': firm.to_dict()
     }), 201
+
+
+@bp.route('/profile', methods=['PATCH'])
+@jwt_required
+def update_profile():
+    """Update the caller's personal/professional profile fields."""
+    user = User.query.filter_by(supabase_id=g.user_id).first()
+    if not user:
+        user = User(supabase_id=g.user_id, email=g.user_email,
+                    is_active=True, is_onboarded=False)
+        db.session.add(user)
+        db.session.flush()
+
+    data = request.get_json() or {}
+    for field in ('full_name', 'designation', 'bar_council_number', 'personal_phone'):
+        if field in data:
+            setattr(user, field, data[field])
+
+    db.session.commit()
+    return jsonify({'profile': {
+        'full_name': user.full_name,
+        'designation': user.designation,
+        'bar_council_number': user.bar_council_number,
+        'personal_phone': user.personal_phone,
+    }})
+
+
+@bp.route('/dismiss-checklist', methods=['POST'])
+@jwt_required
+def dismiss_checklist():
+    """Hide the Home 'Finish setting up' checklist for this user."""
+    user = User.query.filter_by(supabase_id=g.user_id).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    user.checklist_dismissed = True
+    db.session.commit()
+    return jsonify({'checklist_dismissed': True})
 
 
 @bp.route('/firm', methods=['GET', 'PUT'])
@@ -217,7 +279,8 @@ def manage_firm():
                 'account_holder_name': bank.account_holder_name,
                 'ifsc_code': bank.ifsc_code,
                 'upi_id': bank.upi_id,
-                'upi_qr_path': bank.upi_qr_path
+                'upi_payee_name': bank.upi_payee_name,
+                'upi_note': bank.upi_note
             })
         return jsonify(result)
     
@@ -247,7 +310,7 @@ def manage_firm():
         firm.use_invoice_prefix = bool(data['use_invoice_prefix'])
     
     # Update bank account fields
-    bank_fields = ['bank_name', 'account_number', 'account_holder_name', 'ifsc_code', 'upi_id', 'upi_qr_path']
+    bank_fields = ['bank_name', 'account_number', 'account_holder_name', 'ifsc_code', 'upi_id', 'upi_payee_name', 'upi_note']
     bank_data = {k: data[k] for k in bank_fields if k in data}
     
     if bank_data:
@@ -255,10 +318,15 @@ def manage_firm():
         if not bank:
             bank = BankAccount(user_id=user.id, is_default=True)
             db.session.add(bank)
-        
+
         for field, value in bank_data.items():
             setattr(bank, field, value)
-    
+
+        err = _bank_upi_error(bank.upi_id, bank.upi_payee_name)
+        if err:
+            db.session.rollback()
+            return jsonify({'error': err}), 400
+
     db.session.commit()
     
     # Return combined response
@@ -271,9 +339,10 @@ def manage_firm():
             'account_holder_name': bank.account_holder_name,
             'ifsc_code': bank.ifsc_code,
             'upi_id': bank.upi_id,
-            'upi_qr_path': bank.upi_qr_path
+            'upi_payee_name': bank.upi_payee_name,
+            'upi_note': bank.upi_note
         })
-    
+
     return jsonify({'firm': result})
 
 
@@ -321,6 +390,9 @@ def manage_bank():
     data = request.get_json()
     
     if request.method == 'POST':
+        err = _bank_upi_error(data.get('upi_id'), data.get('upi_payee_name'))
+        if err:
+            return jsonify({'error': err}), 400
         # Create new bank account
         bank = BankAccount(
             user_id=user.id,
@@ -329,10 +401,11 @@ def manage_bank():
             account_holder_name=data.get('account_holder_name'),
             ifsc_code=data.get('ifsc_code'),
             upi_id=data.get('upi_id'),
-            upi_qr_path=data.get('upi_qr_path'),
+            upi_payee_name=data.get('upi_payee_name'),
+            upi_note=data.get('upi_note'),
             is_default=data.get('is_default', False)
         )
-        
+
         # If this is the first bank or marked as default, make it default
         existing = BankAccount.query.filter_by(user_id=user.id).count()
         if existing == 0 or data.get('is_default'):
@@ -351,10 +424,15 @@ def manage_bank():
         bank = BankAccount(user_id=user.id, is_default=True)
         db.session.add(bank)
     
-    for field in ['bank_name', 'account_number', 'account_holder_name', 'ifsc_code', 'upi_id', 'upi_qr_path']:
+    for field in ['bank_name', 'account_number', 'account_holder_name', 'ifsc_code', 'upi_id', 'upi_payee_name', 'upi_note']:
         if field in data:
             setattr(bank, field, data[field])
-    
+
+    err = _bank_upi_error(bank.upi_id, bank.upi_payee_name)
+    if err:
+        db.session.rollback()
+        return jsonify({'error': err}), 400
+
     db.session.commit()
     return jsonify(bank.to_dict())
 

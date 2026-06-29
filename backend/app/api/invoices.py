@@ -7,6 +7,7 @@ from app.services.pdf_templates import generate_pdf_with_template
 from app.middleware.jwt_auth import jwt_required
 from app.middleware.firm_context import require_permission
 from app.utils.pagination import pagination_requested, get_pagination_args, paginate_query
+from app.services.upi import build_upi_uri, compose_note
 from sqlalchemy.orm import joinedload
 from datetime import datetime, date
 import io
@@ -54,6 +55,28 @@ def invalidate_firm_cache(user_id):
     global _firm_cache
     if user_id in _firm_cache:
         del _firm_cache[user_id]
+
+
+def _resolve_bank():
+    """The caller's default bank, queried fresh (not the perf cache) so the
+    embedded UPI link always reflects the latest saved VPA/payee/note."""
+    user = get_current_user()
+    if not user:
+        return None
+    return BankAccount.query.filter_by(user_id=user.id, is_default=True).first()
+
+
+def _attach_upi(payload, invoice, bank):
+    """Inject the per-invoice upi:// deep link into an invoice dict."""
+    payload['upi_uri'] = build_upi_uri(
+        getattr(bank, 'upi_id', None) if bank else None,
+        getattr(bank, 'upi_payee_name', None) if bank else None,
+        amount=invoice.total,
+        note=compose_note(getattr(bank, 'upi_note', None) if bank else None,
+                          invoice.invoice_number),
+        invoice_no=invoice.invoice_number,
+    )
+    return payload
 
 
 def get_current_user():
@@ -152,7 +175,8 @@ def get_invoices():
         sort_col = INVOICE_SORT_COLUMNS.get(sort, Invoice.invoice_number)
     query = query.order_by(sort_col.asc() if order == 'asc' else sort_col.desc())
 
-    serialize = lambda inv: inv.to_dict(include_items=False)
+    bank = _resolve_bank()
+    serialize = lambda inv: _attach_upi(inv.to_dict(include_items=False), inv, bank)
 
     if pagination_requested():
         page, page_size = get_pagination_args()
@@ -169,8 +193,8 @@ def get_invoice(invoice_id):
     invoice = Invoice.query.filter_by(id=invoice_id, firm_id=g.firm_id).first()
     if not invoice:
         return jsonify({'error': 'Invoice not found'}), 404
-    
-    return jsonify(invoice.to_dict(include_items=True))
+
+    return jsonify(_attach_upi(invoice.to_dict(include_items=True), invoice, _resolve_bank()))
 
 
 @bp.route('/invoices', methods=['POST'])
@@ -240,8 +264,8 @@ def create_invoice():
         
         db.session.add(invoice)
         db.session.commit()
-        
-        return jsonify(invoice.to_dict(include_items=True)), 201
+
+        return jsonify(_attach_upi(invoice.to_dict(include_items=True), invoice, _resolve_bank())), 201
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -305,9 +329,9 @@ def update_invoice(invoice_id):
     
     # Recalculate totals
     invoice.calculate_totals()
-    
+
     db.session.commit()
-    return jsonify(invoice.to_dict(include_items=True))
+    return jsonify(_attach_upi(invoice.to_dict(include_items=True), invoice, _resolve_bank()))
 
 
 @bp.route('/invoices/<int:invoice_id>/mark_paid', methods=['POST'])
@@ -323,9 +347,9 @@ def mark_invoice_paid(invoice_id):
     
     invoice.status = 'paid'
     invoice.paid_date = datetime.fromisoformat(data['paid_date']).date() if data.get('paid_date') else date.today()
-    
+
     db.session.commit()
-    return jsonify(invoice.to_dict(include_items=True))
+    return jsonify(_attach_upi(invoice.to_dict(include_items=True), invoice, _resolve_bank()))
 
 
 @bp.route('/invoices/<int:invoice_id>/generate_pdf', methods=['POST'])
@@ -524,5 +548,5 @@ def duplicate_invoice(invoice_id):
     
     return jsonify({
         'message': 'Invoice duplicated successfully',
-        'invoice': new_invoice.to_dict()
+        'invoice': _attach_upi(new_invoice.to_dict(), new_invoice, _resolve_bank())
     }), 201

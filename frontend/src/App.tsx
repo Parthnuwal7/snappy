@@ -23,6 +23,7 @@ import PublicInvoice from './pages/PublicInvoice';
 import Team from './pages/Team';
 import Roles from './pages/Roles';
 import AcceptInvite from './pages/AcceptInvite';
+import InviteeProfile from './pages/InviteeProfile';
 import CasesLayout from './pages/CasesLayout';
 import CasesKanban from './pages/CasesKanban';
 import CaseVault from './pages/CaseVault';
@@ -78,6 +79,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <Onboarding />
+              </ProtectedRoute>
+            }
+          />
+          {/* Invitee profile capture after a token-based accept. */}
+          <Route
+            path="/invitee-profile"
+            element={
+              <ProtectedRoute>
+                <InviteeProfile />
               </ProtectedRoute>
             }
           />

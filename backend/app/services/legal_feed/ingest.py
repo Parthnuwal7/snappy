@@ -44,7 +44,12 @@ def _ingest_source(source) -> dict:
 
 
 def _enrich_ids(ids, client) -> tuple:
-    """Enrich the given item ids. Returns (enriched, failed)."""
+    """Enrich the given item ids. Returns (enriched, failed).
+
+    Commits after each item so the open-transaction window never spans more than
+    one (slow) LLM round-trip. A worker killed mid-run can then orphan at most a
+    single short transaction, and every item enriched so far is already durable.
+    """
     enriched = failed = 0
     for item_id in ids:
         item = LegalFeedItem.query.get(item_id)
@@ -55,7 +60,7 @@ def _enrich_ids(ids, client) -> tuple:
             enriched += 1
         else:
             failed += 1
-    db.session.commit()
+        db.session.commit()
     return enriched, failed
 
 

@@ -95,3 +95,30 @@ def accept_invite():
 
     return jsonify({'firm_id': user.firm_id, 'role_id': user.role_id,
                     'invite': invite.to_dict()})
+
+
+@bp.route('/invites/accept-pending', methods=['POST'])
+@jwt_required
+def accept_pending():
+    """Attach the authenticated firm-less user to their newest pending invite.
+
+    Used when a person whose email was invited signs up directly instead of
+    clicking the email link — we auto-route them into the firm rather than let
+    them provision a duplicate.
+    """
+    user = User.query.filter_by(supabase_id=g.user_id).first()
+    if not user:
+        user = User(supabase_id=g.user_id, email=g.user_email,
+                    is_active=True, is_onboarded=False)
+        db.session.add(user)
+        db.session.flush()
+
+    try:
+        invite = invite_service.accept_pending_invite(user)
+        db.session.commit()
+    except invite_service.InviteError as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 400
+
+    return jsonify({'firm_id': user.firm_id, 'role_id': user.role_id,
+                    'invite': invite.to_dict()})

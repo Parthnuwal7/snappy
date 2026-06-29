@@ -29,6 +29,14 @@ def create_app():
         )
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    # Pool hardening: a gunicorn worker killed mid-request (e.g. an ingestion run
+    # exceeding the worker timeout) can strand a dead/idle-in-transaction
+    # connection in the pool. pool_pre_ping drops dead connections on checkout;
+    # pool_recycle caps connection lifetime so none lingers indefinitely.
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,
+        'pool_recycle': 280,
+    }
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-prod')
     app.config['INVOICE_PREFIX'] = os.getenv('INVOICE_PREFIX', 'LAW')
     app.config['CURRENCY'] = os.getenv('CURRENCY', 'INR')

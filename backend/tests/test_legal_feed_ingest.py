@@ -122,3 +122,38 @@ def test_run_records_enrichment_counters(db, monkeypatch):
     item = LegalFeedItem.query.filter_by(source_url='http://x/a').first()
     assert item.image_url == 'http://img/a'
     assert item.headline == 'H'
+
+
+def test_enrich_ids_commits_per_item(db, monkeypatch):
+    """Per-item commit: a crash on item N leaves items < N durably enriched and
+    bounds the open-transaction window to a single LLM round-trip."""
+    import datetime as _dt
+    import pytest
+    import app.services.legal_feed.ingest as ing
+
+    i1 = LegalFeedItem(content_type='news', title='a', source_url='ua',
+                       source_name='s', dedup_key='c1')
+    i2 = LegalFeedItem(content_type='news', title='b', source_url='ub',
+                       source_name='s', dedup_key='c2')
+    db.session.add_all([i1, i2])
+    db.session.commit()
+    ids = [i1.id, i2.id]
+
+    calls = {'n': 0}
+
+    def flaky(item, client):
+        calls['n'] += 1
+        if calls['n'] == 2:
+            raise RuntimeError('worker died mid-item')
+        item.enriched_at = _dt.datetime.utcnow()
+        item.topics = ['Tax']
+        return True
+
+    monkeypatch.setattr(ing, 'enrich_item', flaky)
+
+    with pytest.raises(RuntimeError):
+        ing._enrich_ids(ids, client=object())
+
+    db.session.rollback()  # discard any uncommitted state from the crash
+    assert LegalFeedItem.query.get(i1.id).enriched_at is not None  # committed before crash
+    assert LegalFeedItem.query.get(i2.id).enriched_at is None

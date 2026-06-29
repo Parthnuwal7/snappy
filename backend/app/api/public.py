@@ -9,6 +9,7 @@ from flask import Blueprint, request, jsonify, send_file
 
 from app.models.models import Invoice
 from app.models.auth import User, BankAccount
+from app.services.upi import build_upi_uri, compose_note
 from app.utils.invoice_links import verify
 from sqlalchemy.orm import joinedload
 
@@ -55,6 +56,12 @@ def _public_dict(invoice, firm, bank):
             'account_number': bank.account_number if bank else None,
             'ifsc_code': bank.ifsc_code if bank else None,
             'account_holder_name': bank.account_holder_name if bank else None,
+            'upi_uri': build_upi_uri(
+                bank.upi_id, getattr(bank, 'upi_payee_name', None),
+                amount=invoice.total,
+                note=compose_note(getattr(bank, 'upi_note', None), invoice.invoice_number),
+                invoice_no=invoice.invoice_number,
+            ) if bank else '',
         } if bank else None,
     }
 

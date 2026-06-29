@@ -37,6 +37,8 @@ export default function Settings() {
     account_holder_name: '',
     ifsc_code: '',
     upi_id: '',
+    upi_payee_name: '',
+    upi_note: '',
     billing_terms: '',
     default_template: 'Simple',
     invoice_prefix: '',
@@ -69,6 +71,8 @@ export default function Settings() {
         account_holder_name: firm.account_holder_name || '',
         ifsc_code: firm.ifsc_code || '',
         upi_id: firm.upi_id || '',
+        upi_payee_name: firm.upi_payee_name || '',
+        upi_note: firm.upi_note || '',
         billing_terms: firm.billing_terms || '',
         default_template: firm.default_template || 'Simple',
         invoice_prefix: firm.invoice_prefix || '',
@@ -101,6 +105,10 @@ export default function Settings() {
   };
 
   const handlePreferencesSave = async () => {
+    if (!preferencesData.upi_id.trim() || !preferencesData.upi_payee_name.trim()) {
+      setMessage({ type: 'error', text: 'UPI ID and UPI payee name are required to save banking details.' });
+      return;
+    }
     setIsLoading(true);
     setMessage(null);
     try {
@@ -452,13 +460,39 @@ export default function Settings() {
             </div>
 
             <div>
-              <label className="field-label">UPI ID</label>
+              <label className="field-label">UPI ID <span className="text-oxblood">*</span></label>
               <input
                 type="text"
                 value={preferencesData.upi_id}
                 onChange={(e) => setPreferencesData({ ...preferencesData, upi_id: e.target.value })}
                 className="field-input font-mono"
+                placeholder="advocate@okbank"
               />
+            </div>
+
+            <div>
+              <label className="field-label">UPI payee name <span className="text-oxblood">*</span></label>
+              <input
+                type="text"
+                value={preferencesData.upi_payee_name}
+                onChange={(e) => setPreferencesData({ ...preferencesData, upi_payee_name: e.target.value })}
+                className="field-input"
+                placeholder="Name shown on the payer's UPI app"
+              />
+            </div>
+
+            <div>
+              <label className="field-label">Default payment note</label>
+              <input
+                type="text"
+                value={preferencesData.upi_note}
+                onChange={(e) => setPreferencesData({ ...preferencesData, upi_note: e.target.value })}
+                className="field-input"
+                placeholder="e.g. Legal Retainer Fee"
+              />
+              <p className="text-xs text-ink-muted mt-1">
+                Shown on the payer's UPI app, followed by the invoice number. The QR is generated per invoice with the exact amount.
+              </p>
             </div>
 
             <div>
@@ -476,16 +510,15 @@ export default function Settings() {
           <div className="card p-8">
             <div className="mb-5">
               <div className="page-eyebrow">Branding</div>
-              <h2 className="section-title mt-1">Logo, signature, UPI QR</h2>
+              <h2 className="section-title mt-1">Logo &amp; signature</h2>
               <p className="text-sm text-ink-muted mt-2 max-w-prose">
-                These appear on the printed invoice.
+                These appear on the printed invoice. The UPI QR is generated automatically from your UPI details above.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <ImageUpload type="logo" label="Firm Logo" description="Top of invoice header" />
               <ImageUpload type="signature" label="Signature" description="Above signature line" />
-              <ImageUpload type="qr" label="UPI QR Code" description="In payment section" />
             </div>
           </div>
 
@@ -626,7 +659,7 @@ export default function Settings() {
                   <li>All clients</li>
                   <li>All items in your catalog</li>
                   <li>Firm profile and banking</li>
-                  <li>All uploaded images (logo, signature, UPI QR)</li>
+                  <li>All uploaded images (logo, signature)</li>
                 </ul>
               </div>
 

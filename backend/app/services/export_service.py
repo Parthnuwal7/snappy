@@ -36,12 +36,11 @@ def _json_default(o: Any):
 
 
 # Storage assets: (archive_label, bucket, source_obj_attr, column_name).
-# logo + signature live on firm_details; upi_qr_path lives on the default
-# bank_account row.
+# logo + signature live on firm_details. (The UPI QR is now generated per-invoice
+# from the bank's UPI deep link, not a stored image — nothing to back up.)
 STORAGE_ASSETS = [
     ("logo",      "firm-logos",  "firm", "logo_path"),
     ("signature", "signatures",  "firm", "signature_path"),
-    ("upi_qr",    "qr-codes",    "bank", "upi_qr_path"),
 ]
 
 

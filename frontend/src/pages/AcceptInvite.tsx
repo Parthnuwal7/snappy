@@ -26,8 +26,8 @@ export default function AcceptInvite() {
       try {
         await api.acceptInvite(token);
         await refreshProfile(); // pick up new firm_id + permissions
-        setStatus('success');
-        setMessage('You have joined the firm.');
+        navigate('/invitee-profile', { replace: true });
+        return;
       } catch (e) {
         setStatus('error');
         setMessage(e instanceof Error ? e.message : 'This invitation could not be accepted.');

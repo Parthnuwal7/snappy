@@ -1,6 +1,7 @@
 import { Invoice } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { X } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface InvoicePreviewProps {
   invoice: Invoice | null;
@@ -167,6 +168,14 @@ export default function InvoicePreview({ invoice, isOpen, onClose }: InvoicePrev
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Scan-to-pay UPI QR (generated per invoice with the exact amount) */}
+            {invoice.upi_uri && (
+              <div className="flex flex-col items-center gap-1 mb-6">
+                <QRCodeSVG value={invoice.upi_uri} size={120} />
+                <span className="text-xs text-ink-muted">Scan to pay {formatINR(invoice.total)}</span>
               </div>
             )}
 
