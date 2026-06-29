@@ -1,4 +1,5 @@
 import { useAuth } from '../contexts/AuthContext';
+import SetupChecklist from '../components/SetupChecklist';
 
 function istHour(): number {
   const utcMs = Date.now() + new Date().getTimezoneOffset() * 60000;
@@ -20,9 +21,10 @@ export default function Home() {
   return (
     <div className="max-w-page mx-auto px-8 lg:px-12 py-24">
       <div className="page-eyebrow">{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-      <h1 className="font-display text-4xl md:text-5xl text-ink mt-2">
+      <h1 className="font-display text-4xl md:text-5xl text-ink mt-2 mb-10">
         {greetingFor(istHour())}, {name}.
       </h1>
+      <SetupChecklist />
     </div>
   );
 }

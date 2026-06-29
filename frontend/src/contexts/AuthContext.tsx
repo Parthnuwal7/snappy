@@ -8,8 +8,28 @@ interface UserProfile {
   device_id: string | null;
   device_info: Record<string, unknown> | null;
   is_onboarded: boolean;
+  full_name: string | null;
+  designation: string | null;
+  bar_council_number: string | null;
+  personal_phone: string | null;
+  is_solo: boolean | null;
+  checklist_dismissed: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface SetupState {
+  bank: boolean;
+  branding: boolean;
+  billing: boolean;
+  team: boolean;
+  dismissed: boolean;
+  complete: boolean;
+}
+
+export interface PendingInvite {
+  firm_name: string;
+  role_name: string;
 }
 
 export interface Firm {
@@ -28,7 +48,8 @@ export interface Firm {
   account_holder_name?: string;
   ifsc_code?: string;
   upi_id?: string;
-  upi_qr_path?: string;
+  upi_payee_name?: string;
+  upi_note?: string;
   terms_and_conditions?: string;
   billing_terms?: string;
   email_subject_template?: string;
@@ -56,6 +77,8 @@ interface AuthContextType {
   profile: UserProfile | null;
   firm: Firm | null;
   membership: Membership | null;
+  setup: SetupState | null;
+  pendingInvite: PendingInvite | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   isOnboarded: boolean;
@@ -78,6 +101,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [firm, setFirm] = useState<Firm | null>(null);
   const [membership, setMembership] = useState<Membership | null>(null);
+  const [setup, setSetup] = useState<SetupState | null>(null);
+  const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // supabase-js re-emits SIGNED_IN on every tab focus and TOKEN_REFRESHED on the
@@ -101,6 +126,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const data = await response.json();
         setProfile(data.profile || null);
         setMembership(data.membership || null);
+        setSetup(data.setup || null);
+        setPendingInvite(data.pending_invite || null);
 
         // Merge bank data into firm object for Settings page compatibility
         if (data.firm) {
@@ -112,7 +139,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               account_holder_name: data.bank.account_holder_name,
               ifsc_code: data.bank.ifsc_code,
               upi_id: data.bank.upi_id,
-              upi_qr_path: data.bank.upi_qr_path,
+              upi_payee_name: data.bank.upi_payee_name,
+              upi_note: data.bank.upi_note,
             }),
           };
           setFirm(firmWithBank);
@@ -124,6 +152,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setProfile(null);
         setFirm(null);
         setMembership(null);
+        setSetup(null);
+        setPendingInvite(null);
       } else {
         // Transient error (most commonly 401 from JWT clock-skew on first
         // call after login). Don't blank out the profile — leave whatever
@@ -196,6 +226,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setProfile(null);
           setFirm(null);
           setMembership(null);
+          setSetup(null);
+          setPendingInvite(null);
           return;
         }
 
@@ -256,6 +288,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setProfile(null);
     setFirm(null);
     setMembership(null);
+    setSetup(null);
+    setPendingInvite(null);
   };
 
   const resetPassword = async (email: string) => {
@@ -292,6 +326,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         profile,
         firm,
         membership,
+        setup,
+        pendingInvite,
         isAuthenticated: !!user,
         isLoading,
         isOnboarded: profile?.is_onboarded ?? false,

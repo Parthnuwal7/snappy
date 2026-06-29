@@ -10,6 +10,7 @@ from io import BytesIO
 import os
 import requests
 import time
+from app.services.upi import build_upi_uri, compose_note, qr_png
 
 
 # Use "Rs." instead of ₹ symbol for font compatibility
@@ -61,7 +62,6 @@ def get_template_shell(user_id, template_name, firm, bank):
         # Pre-fetch images (uses image cache internally)
         'logo_bytes': get_supabase_image(user_id, 'logo'),
         'signature_bytes': get_supabase_image(user_id, 'signature'),
-        'qr_bytes': get_supabase_image(user_id, 'qr'),
     }
     
     # Cache the shell
@@ -333,10 +333,7 @@ def generate_pdf_law_001(invoice, firm):
     <b>Account Holder's Name:</b> {firm.account_holder_name or account_holder_placeholder}<br/>
     <b>Bank Account Name:</b> {firm.account_number or bank_account_placeholder}"""
     
-    if firm.upi_qr_path and os.path.exists(firm.upi_qr_path):
-        upi_cell = Image(firm.upi_qr_path, width=1.2*inch, height=1.2*inch)
-    else:
-        upi_cell = Paragraph("<b>&lt;UPI QR image&gt;</b><br/>&lt;UPI Scan to pay sticker&gt;", ParagraphStyle('Small', parent=styles['Normal'], fontSize=8))
+    upi_cell = Paragraph("<b>&lt;UPI QR image&gt;</b><br/>&lt;UPI Scan to pay sticker&gt;", ParagraphStyle('Small', parent=styles['Normal'], fontSize=8))
     
     payment_cell = Paragraph(payment_info, ParagraphStyle('PaymentInfo', parent=styles['Normal'], fontSize=9))
     
@@ -616,26 +613,22 @@ def build_halfpage_elements(invoice, firm, user_id=None, bank=None, shell_data=N
     elements.append(amounts_combined)
     
     # ======= FOOTER: BANK DETAILS + TERMS + SIGNATURE =======
-    # Bank Details with QR
+    # Per-invoice UPI QR built from the bank's VPA + this invoice's amount/number.
     qr_img = None
-    
-    # Use cached QR from shell_data if available, otherwise fetch
-    if shell_data and shell_data.get('qr_bytes'):
-        try:
-            qr_bytes = shell_data['qr_bytes']
-            if isinstance(qr_bytes, BytesIO):
-                qr_bytes.seek(0)
-            qr_img = Image(qr_bytes, width=0.8*inch, height=0.8*inch)
-        except:
-            pass
-    elif user_id:
-        qr_data = get_supabase_image(user_id, 'qr')
-        if qr_data:
+    if bank and getattr(bank, 'upi_id', None):
+        uri = build_upi_uri(
+            bank.upi_id, getattr(bank, 'upi_payee_name', None),
+            amount=invoice.total,
+            note=compose_note(getattr(bank, 'upi_note', None), invoice.invoice_number),
+            invoice_no=invoice.invoice_number,
+        )
+        png = qr_png(uri)
+        if png:
             try:
-                qr_img = Image(qr_data, width=0.8*inch, height=0.8*inch)
-            except:
-                pass
-    
+                qr_img = Image(BytesIO(png), width=0.8*inch, height=0.8*inch)
+            except Exception:
+                qr_img = None
+
     if not qr_img:
         qr_img = Paragraph("<b>UPI<br/>QR</b>", tiny_style)
     

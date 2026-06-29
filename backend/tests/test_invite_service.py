@@ -181,3 +181,56 @@ def test_accept_revoked_invite_fails(app):
         db.session.commit()
         with pytest.raises(invite_service.InviteError):
             invite_service.accept_invite(token, joiner)
+
+
+# ---- accept-pending + lookup (onboarding redesign) ----
+from app.models.auth import Firm as _Firm
+
+
+def _firm_with_role(name='Firm A', role='Staff'):
+    firm = _Firm(name=name)
+    db.session.add(firm)
+    db.session.flush()
+    r = Role(firm_id=firm.id, name=role, permissions=[], is_system=False)
+    db.session.add(r)
+    db.session.flush()
+    return firm, r
+
+
+def test_accept_pending_invite_attaches_newest(app):
+    with app.app_context():
+        firm, role = _firm_with_role()
+        db.session.add(FirmInvite(firm_id=firm.id, email='joiner@x.com', role_id=role.id,
+                                  token='t1', status='pending',
+                                  expires_at=datetime.utcnow() + timedelta(days=3)))
+        user = User(email='joiner@x.com', supabase_id='sb-j')
+        db.session.add(user)
+        db.session.commit()
+        invite = invite_service.accept_pending_invite(user)
+        db.session.commit()
+        assert user.firm_id == firm.id
+        assert user.role_id == role.id
+        assert user.is_onboarded is True
+        assert invite.status == 'accepted'
+
+
+def test_accept_pending_invite_raises_when_none(app):
+    with app.app_context():
+        user = User(email='lonely@x.com', supabase_id='sb-l')
+        db.session.add(user)
+        db.session.commit()
+        try:
+            invite_service.accept_pending_invite(user)
+            assert False, 'expected InviteError'
+        except invite_service.InviteError:
+            pass
+
+
+def test_pending_invite_for_skips_expired(app):
+    with app.app_context():
+        firm, role = _firm_with_role(name='Firm B')
+        db.session.add(FirmInvite(firm_id=firm.id, email='exp@x.com', role_id=role.id,
+                                  token='t2', status='pending',
+                                  expires_at=datetime.utcnow() - timedelta(days=1)))
+        db.session.commit()
+        assert invite_service.pending_invite_for('exp@x.com') is None

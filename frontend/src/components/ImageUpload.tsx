@@ -3,7 +3,7 @@ import { api } from '../api';
 import { Image as ImageIcon, PenLine, QrCode, Upload, Trash2 } from 'lucide-react';
 
 interface ImageUploadProps {
-  type: 'logo' | 'signature' | 'qr';
+  type: 'logo' | 'signature';
   label: string;
   description?: string;
   onUploadComplete?: (path: string) => void;

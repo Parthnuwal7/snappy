@@ -15,7 +15,6 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 BUCKETS = {
     'logo': 'firm-logos',
     'signature': 'signatures',
-    'qr': 'qr-codes'
 }
 
 
@@ -220,7 +219,7 @@ def precache_images():
     cached = []
     
     # Pre-fetch all image types
-    for image_type in ['logo', 'signature', 'qr']:
+    for image_type in ['logo', 'signature']:
         try:
             result = get_supabase_image(user_id, image_type)
             if result:

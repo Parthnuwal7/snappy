@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, PublicInvoice as PublicInvoiceData } from '../api';
 import { Download, FileText } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 const formatINR = (value?: number) =>
   '₹' + (value ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -185,6 +186,12 @@ export default function PublicInvoice() {
                     </div>
                   )}
                 </div>
+                {invoice.payment.upi_uri && (
+                  <div className="mt-4 flex flex-col items-center gap-1">
+                    <QRCodeSVG value={invoice.payment.upi_uri} size={140} />
+                    <span className="text-xs text-ink-muted">Scan to pay {formatINR(invoice.total)}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
